@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Cartella download temporanei
+downloads/*
+!downloads/.gitkeep
+
+# File di ambiente con token e credenziali
+.env
+
+# Database locale SQLite di runtime
+memobot.db
+
+# Cartelle di backup fisiche
+backups/
+
+# Credenziali Google Calendar e note OAuth
+credentials.json
+token.json
+IDCLIENT_OAuth_Google.*
+
+# Preferenze utente locali
+user_settings.json
+*.docx

@@ -1,0 +1,13 @@
+python-telegram-bot>=21.0
+ollama
+openai-whisper
+streamlit
+pandas
+beautifulsoup4
+requests
+pillow
+python-dotenv
+imageio-ffmpeg
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
