@@ -95,19 +95,40 @@ def render_scheda_guida():
         * **Stato Sincronizzato:** I memo già registrati su Google Calendar mostrano il badge verde **`✅ Sincronizzato su FabMemoBot`**.
         """)
 
-    with st.expander("🗂️ 5. Gestione Archivio & Cancellazione di Gruppo (Bulk Delete)", expanded=False):
+    with st.expander("🔭 5. Astro_KW Radar: Chatta con le tue Note (RAG Locale)", expanded=False):
         st.markdown("""
-        * **Ricerca Full-Text:** Digita qualsiasi termine nella barra laterale sinistra per cercare istantaneamente tra titoli, riassunti, trascrizioni originali e tag.
-        * **Schede Tematiche per Categoria:** Oltre alla vista totale, puoi consultare i memo divisi in:
-          * *Lavoro, Sport, Tempo Libero, Famiglia/Personale, Tecnologia, Notizie, Spesa/Acquisti, Altro*.
-        * **Modifica sul posto:** Cliccando su un memo, puoi espanderlo e modificare titolo, riassunto, categoria o priorità e salvare con il tasto **`💾 Salva Modifiche`**.
-        * **Selezione Multipla & Eliminazione Massiva (Bulk Delete):**
-          * Spunta le caselle di controllo accanto ai memo che desideri rimuovere.
-          * Usa i comandi rapidi **`☑️ Tutti`** o **`⬜ Nessuno`** nella barra superiore.
-          * Clicca su **`🗑️ Elimina selezionati`** e conferma per pulire il database in sicurezza.
+        * **Cos'è Astro_KW Radar:** È il tuo assistente AI proattivo. Puoi dialogare in linguaggio naturale ponendo qualsiasi domanda sui tuoi appunti personali.
+        * **Elaborazione 100% Locale e Privata:** Radar interroga SQLite direttamente sulla tua macchina ed elabora le risposte con **Qwen 2.5 14B** in locale tramite Ollama. Nessun dato lascia il tuo PC.
+        * **Morfologia & Stemming Italiano:** Grazie al motore di stemming morfologico integrato, Radar comprende le radici delle parole: domande con plurali come *"quali note parlano di **libri**?"* troveranno con precisione sia note con *"audiolibri"* sia note con *"libro"* al singolare.
+        * **Consapevolezza di Stato e Posizione ("Dove si trova?"):** Radar sa sempre in quale scheda si trova ogni appunto (*"Nella scheda 📦 Archivio sotto la categoria Cultura"* o *"Tra i compiti attivi nella scheda Lavoro"*), guidandoti all'istante verso la nota cercata.
+        * **Il Cestino come Salvagente Cognitivo:** Le note nel cestino vengono scansionate come rete di sicurezza: se chiedi di un memo scartato per errore, Radar te lo trova e ti avvisa esplicitamente che si trova nel **🗑️ Cestino** pronto per essere ripristinato (mentre non lo includerà mai quando chiedi di compiti o agende attive).
+        * **Fonti Consultate Interattive:** Sotto ogni risposta generata, il menu a scomparsa **`📚 Fonti consultate`** ti mostra le schede interattive di ciascun memo esaminato: puoi espanderle con un clic per leggere subito il riassunto, aprire il link web originale o consultare il testo senza uscire dalla chat.
+        * **Filtri di Contesto:** Puoi restringere la ricerca a una specifica categoria (es. solo *Lavoro* o solo note *P1 Urgenti*).
         """)
 
-    with st.expander("🎨 6. Accessibilità (WCAG AAA), Ipovisione & Scorciatoie da Tastiera", expanded=False):
+    with st.expander("🗂️ 6. Gestione Archivio, Cestino & Eliminazione Protetta", expanded=False):
+        st.markdown("""
+        * **Inbox Zero & Archiviazione Note:**
+          * I memo nascono come elementi "vivi" da elaborare, leggere o completare.
+          * Una volta terminato un compito o approfondito un link/foto, clicca su **`📦 Archivia`** sotto il memo.
+          * La nota viene rimossa dalle schede dei compiti attivi (*Tutti, Lavoro, Sport, ecc.*) e spostata nella scheda dedicata **`📦 Archivio`**.
+          * Il badge della priorità viene sostituito dal pallino bianco neutro **`⚪ [A]`**, togliendo urgenza visiva ma preservando ogni dettaglio.
+        * **Ripristino dall'Archivio con 1 Clic:**
+          * Nella scheda **`📦 Archivio`**, sotto ogni memo trovi il tasto **`↩️ Ripristina`** per riportare la nota tra i compiti attivi in qualunque momento.
+        * **Cestino & Protezione dalle Cancellazioni Accidentali:**
+          * Quando elimini un memo dalle schede attive o dall'archivio, la cancellazione **NON è mai immediata né irreversibile**: il memo viene spostato in sicurezza nel **`🗑️ Cestino`** con contrassegno `🗑️ [CESTINATO]`.
+          * Nel **Cestino**, puoi esaminare tutte le note scartate e hai a disposizione:
+            * **`↩️ Ripristina Memo`** (sia singolo che massivo per selezioni multiple) per recuperare qualsiasi appunto rimosso per errore.
+            * **`🔥 Elimina per Sempre`** (con richiesta esplicita di conferma irreversibile) per i singoli memo.
+            * **`🔥 Svuota Cestino`** nella barra degli strumenti per ripulire definitivamente tutto il cestino in un solo colpo.
+        * **Azioni di Gruppo (Bulk Actions):**
+          * Spunta le caselle di controllo dei memo che vuoi gestire contemporaneamente.
+          * Nelle schede attive puoi usare il pulsante **`📦 Archivia ({N})`** o **`🗑️ Cestina ({N})`**.
+          * Nella scheda Cestino puoi usare **`↩️ Ripristina ({N})`** o **`🔥 Svuota Cestino`**.
+        * **Modifica sul posto:** Cliccando su un memo, puoi espanderlo e modificare titolo, riassunto, categoria o priorità e salvare con il tasto **`💾 Salva Modifiche`**.
+        """)
+
+    with st.expander("🎨 7. Accessibilità (WCAG AAA), Ipovisione & Scorciatoie da Tastiera", expanded=False):
         st.markdown("""
         Astro_KW MemoBot è progettato per essere pienamente accessibile secondo le linee guida **WCAG AAA**:
         
@@ -124,7 +145,7 @@ def render_scheda_guida():
         * **Scalatura Testo:** Puoi ingrandire l'intero cruscotto fino al **140%** tramite lo slider nella barra laterale sinistra.
         """)
 
-    with st.expander("📲 7. Condivisione Rapida & Esportazione Dati", expanded=False):
+    with st.expander("📲 8. Condivisione Rapida & Esportazione Dati", expanded=False):
         st.markdown("""
         * **Tasto "Condividi / Copia":** Sotto a ogni memo trovi il tasto **`📲 Condividi / Copia`**. Aprendolo, trovi:
           * Una scheda formattata con Titolo, Riassunto e Link pronta per essere copiata con 1 clic negli appunti.
@@ -133,6 +154,24 @@ def render_scheda_guida():
           * **📄 CSV (Excel):** Per fogli di calcolo e analisi dati.
           * **📦 JSON:** Per backup tecnici o integrazioni con altri applicativi.
           * **📝 Markdown:** Per archivio documentale leggibile o importazione in Obsidian / Notion.
+    with st.expander("🤖 9. Motori AI: Locale (Privacy Assoluta) vs Cloud (Universale per Qualsiasi PC)", expanded=False):
+        st.markdown("""
+        MemoBot è completamente **agnostico rispetto al motore di intelligenza artificiale**: puoi scegliere la modalità ideale per le tue esigenze e per il tuo computer direttamente dalla barra laterale sinistra (sezione *🤖 Motore AI*):
+        
+        * **🏠 Modalità Sovrana / Privacy 100% (Ollama Locale):**
+          * **Zero Cloud:** Nessun dato, testo, audio o foto esce mai dal tuo PC.
+          * **Modello Testo:** `Qwen 2.5 14B` (o `7B` per schede con meno VRAM).
+          * **Visione & Audio:** Vision locale (`Qwen 2.5-VL`) e trascrizione con Whisper locale e ffmpeg.
+          * **Ideale per:** Chi possiede un PC con GPU dedicata e desidera riservatezza totale e funzionamento offline.
+        
+        * **☁️ Modalità Universale / Cloud (Nessun Hardware Potente Richiesto):**
+          * **Google Gemini (Consigliato Gratuito):** Con una chiave API gratuita da [Google AI Studio](https://aistudio.google.com/), puoi usare `Gemini 1.5/2.0 Flash` a costo zero, con velocità istantanea e precisione impeccabile.
+          * **Groq (Ultra-Veloce):** Genera risposte e trascrive audio in meno di 1 secondo con Llama 3.3 e Whisper Cloud ultra-veloce.
+          * **OpenAI (ChatGPT):** Per chi ha già un account OpenAI con `gpt-4o-mini`.
+          * **OpenRouter:** Unico account per accedere a decine di modelli (Claude 3.5 Sonnet, DeepSeek, Mistral, ecc.).
+          * **Ideale per:** Amici, collaboratori o chi usa un portatile leggero senza scheda grafica dedicata, senza bisogno di installare Ollama o pesi giganti.
+        
+        * **Test Connessione in 1 Clic:** Dalla barra laterale puoi premere **`🧪 Testa Connessione AI`** in qualsiasi momento per verificare lo stato di risposta del tuo motore.
         """)
 
     st.markdown("---")

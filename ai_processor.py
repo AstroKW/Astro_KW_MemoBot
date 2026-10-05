@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import ollama
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -112,14 +111,22 @@ Contenuto da analizzare:
 """
 
     try:
-        response = ollama.chat(
-            model=MODEL_NAME,
+        import ai_service
+        contenuto_risposta = ai_service.chat_completion(
             messages=[{'role': 'user', 'content': prompt}],
-            format='json'
+            format_json=True
         )
         
-        contenuto_risposta = response['message']['content']
-        dati = json.loads(contenuto_risposta)
+        # Pulizia robusta di eventuali wrapper markdown ```json ... ```
+        testo_pulito = re.sub(r'^```(?:json)?\s*', '', contenuto_risposta.strip(), flags=re.IGNORECASE)
+        testo_pulito = re.sub(r'\s*```$', '', testo_pulito.strip())
+        
+        # Estrai la prima porzione JSON valida se ci fosse testo prima o dopo
+        match_json = re.search(r'(\{.*\})', testo_pulito, re.DOTALL)
+        if match_json:
+            testo_pulito = match_json.group(1)
+            
+        dati = json.loads(testo_pulito)
         
         # Validazione Titolo
         if not dati.get("titolo") and titolo_suggerito:
@@ -156,7 +163,8 @@ Contenuto da analizzare:
         return dati
 
     except Exception as e:
-        print(f"[AI] Errore durante l'elaborazione con Ollama ({MODEL_NAME}): {e}")
+        import ai_service
+        print(f"[AI] Errore durante l'elaborazione con {ai_service.get_active_provider_label()}: {e}")
         fallback_titolo = titolo_suggerito if titolo_suggerito else "Memo"
         fallback_priorita = priorita_utente if priorita_utente is not None else 3
         return {

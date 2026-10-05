@@ -13,12 +13,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/GUI-Streamlit-FF4B4B?logo=streamlit" alt="Streamlit">
-  <img src="https://img.shields.io/badge/AI-Ollama%20%7C%20Qwen%202.5-black?logo=ollama" alt="Ollama Qwen 2.5">
-  <img src="https://img.shields.io/badge/Audio-Whisper%20%2B%20ffmpeg-green" alt="Whisper">
+  <img src="https://img.shields.io/badge/AI-Ollama%20%7C%20Gemini%20%7C%20Groq%20%7C%20OpenAI-blueviolet" alt="Dual Engine AI">
+  <img src="https://img.shields.io/badge/Audio-Whisper%20(Local%20%26%20Cloud)-green" alt="Whisper">
   <img src="https://img.shields.io/badge/Calendar-Google%20Calendar%20API-4285F4?logo=googlecalendar" alt="Google Calendar API">
   <img src="https://img.shields.io/badge/Accessibility-WCAG%20AAA-yellow" alt="WCAG AAA">
   <img src="https://img.shields.io/badge/License-GNU%20GPLv3-blue" alt="GNU GPLv3">
-  <img src="https://img.shields.io/badge/Privacy-100%25%20Zero--Cloud-brightgreen" alt="100% Zero-Cloud">
+  <img src="https://img.shields.io/badge/Mode-Local%20Privacy%20%26%20Cloud%20Ready-brightgreen" alt="Dual Engine Ready">
 </p>
 
 <p align="center">
@@ -33,11 +33,14 @@ Viviamo sommersi da idee, scadenze, link di articoli, vocali veloci e foto scatt
 
 **Astro_KW MemoBot** ribalta questo paradigma:
 1. **Durante il giorno (su smartphone):** Invia qualsiasi appunto alla tua chat privata di Telegram (un vocale registrato mentre cammini, un link di Instagram/YouTube, una foto di uno scontrino o un promemoria di testo).
-2. **La sera (o quando accendi il PC):** Apri la dashboard locale e premi **"Sincronizza ora"**.
-3. **Elaborazione 100% Locale:** Il tuo computer trascrive i vocali con **Whisper**, analizza immagini e testi con **Qwen 2.5**, assegna categorie e priorità (P1/P2/P3), estrae scadenze temporali e ti permette di inviarle a **Google Calendar con 1 solo clic**.
+2. **La sera (o quando accendi il PC):** Apri la dashboard e premi **"Sincronizza ora con Telegram"**.
+3. **Elaborazione AI Flessibile (Dual-Engine):**
+   * **Modalità Sovrana / Privacy 100% (Ollama):** Il tuo computer elabora tutto in locale senza mai inviare dati o file all'esterno.
+   * **Modalità Universale / Cloud Leggero (Gemini, Groq, OpenAI):** Per chi usa un portatile leggero senza scheda grafica dedicata, basta una chiave API (es. Google Gemini gratuita o Groq) per avere trascrizioni e analisi fulminee a costo zero.
+   * MemoBot estrae categorie, priorità (P1/P2/P3), scadenze temporali e ti permette di inviarle a **Google Calendar con 1 solo clic**.
 
-> [!IMPORTANT]
-> **Zero Cloud, Privacy Assoluta:** Nessun dato, voce, immagine o nota personale viene mai inviato a server cloud di terze parti (OpenAI, Google, ecc.) per l'analisi AI. Tutto viene elaborato e custodito esclusivamente sulla tua macchina.
+> [!NOTE]
+> **Privacy e Libertà di Scelta:** Puoi scegliere in qualunque momento se far girare l'intelligenza artificiale al 100% in locale (Ollama + Whisper offline) oppure appoggiarti alle API Cloud di Google Gemini (gratuite), Groq o OpenAI, direttamente con un selettore nella barra laterale!
 
 ---
 
@@ -215,19 +218,24 @@ Per abilitare la sincronizzazione a 1-clic con Google Calendar:
 
 ---
 
-## 🗺️ Roadmap dei Prossimi Sviluppi
+## 🗺️ Roadmap dei Rilasci & Sviluppi
 
-- [x] **v1.0 (Attuale):**
-  - Trascrizione Whisper locale e Visione OCR per immagini.
-  - Normalizzazione fuso orario e iniezione calendario a 7 giorni per date esatte.
-  - Sincronizzazione ufficiale Google Calendar API in 1-Click o cumulativa.
-  - Dashboard interattiva con selezione multipla e Bulk Delete.
+- [x] **v1.0 — Baseline Stabile & Accessibilità:**
+  - Trascrizione Whisper con ffmpeg e Visione OCR per immagini.
+  - Normalizzazione fuso orario e iniezione calendario dinamico a 7 giorni per date esatte.
+  - Sincronizzazione ufficiale Google Calendar API in 1-Click e cumulativa.
   - Motore di personalizzazione grafica e accessibilità WCAG AAA (temi scuro, carta chiara, alto contrasto ipovisione, font Atkinson Hyperlegible e Lexend).
   - Guida utente completa integrata nativamente nell'interfaccia.
-- [ ] **v1.1 (Prossima Milestone):**
-  - **Local RAG Chat con Ollama ("Chiedi al Tuo Secondo Cervello"):** Nuova scheda dedicata in dashboard per dialogare in linguaggio naturale con l'intero archivio storico dei memo e ricevere sintesi ragionate in locale con `qwen2.5:14b`.
-- [ ] **v1.2:**
-  - Supporto per internazionalizzazione multilingua (i18n).
+- [x] **v1.1 — Inbox Zero & Protezione Totale:**
+  - **Archiviazione Note (Inbox Zero):** Separazione netta tra compiti vivi e completati con badge neutro `⚪ [A]`.
+  - **Cestino con Soft Delete:** Nessuna cancellazione accidentale, ripristino in 1-clic e svuotamento sicuro.
+- [x] **v1.2 — Astro_KW Radar & Architettura AI Agnostica (Dual-Engine):**
+  - **Astro_KW Radar (RAG Avanzato):** Chat locale e cloud con le note, stemming morfologico italiano per plurali/singolari, citazione fonti interattive e consapevolezza della collocazione ("Dove si trova?").
+  - **Architettura Multi-Provider Dual-Engine:** Supporto contemporaneo per Ollama locale (100% privacy offline) e Cloud API (Google Gemini gratuito, Groq ultra-veloce, OpenAI, OpenRouter).
+  - Widget nella dashboard con test di latenza in 1-clic e configurazione guidata.
+- [ ] **v1.3 (Prossimi Passi):**
+  - Persistenza chat preferite ⭐ e salvataggio risposte Radar come nuovi memo.
+  - Supporto per internazionalizzazione multilingua dell'interfaccia (i18n).
 
 ---
 

@@ -21,17 +21,17 @@ def get_whisper_model():
         _MODEL_WHISPER = whisper.load_model("base")
     return _MODEL_WHISPER
 
-def trascrivi_media(file_path):
+def trascrivi_media_locale(file_path):
     """
     Riceve il percorso di un file audio o video e restituisce il testo trascritto.
-    Utilizza ffmpeg per decodificare il container audio (.ogg/.mp4).
+    Utilizza ffmpeg per decodificare il container audio (.ogg/.mp4) con Whisper locale.
     """
     if not os.path.exists(file_path):
         print(f"[MEDIA] Errore: Il file {file_path} non esiste.")
         return None
 
     try:
-        print(f"[MEDIA] Trascrizione audio con Whisper in corso: {file_path}...")
+        print(f"[MEDIA] Trascrizione audio con Whisper Locale in corso: {file_path}...")
         model = get_whisper_model()
         prompt_contesto = (
             "Trascrizione in italiano di un appunto, nota vocale o promemoria personale. "
@@ -54,8 +54,16 @@ def trascrivi_media(file_path):
         return testo
 
     except Exception as e:
-        print(f"[MEDIA] Errore durante la trascrizione con Whisper: {e}")
+        print(f"[MEDIA] Errore durante la trascrizione con Whisper Locale: {e}")
         return None
+
+def trascrivi_media(file_path):
+    """
+    Punto di ingresso unificato: instrada la trascrizione verso Groq/OpenAI Whisper Cloud
+    se configurato, oppure verso Whisper locale con ffmpeg.
+    """
+    import ai_service
+    return ai_service.audio_transcription(file_path)
 
 if __name__ == "__main__":
     print("Modulo Whisper verificato e pronto all'uso con supporto ffmpeg!")

@@ -64,11 +64,21 @@ def init_db():
         print("[DATABASE] Migrazione: aggiunta colonna 'google_event_id'...")
         cursor.execute("ALTER TABLE memo ADD COLUMN google_event_id TEXT")
 
+    if "archiviato" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'archiviato'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN archiviato INTEGER DEFAULT 0")
+
+    if "cestinato" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'cestinato'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN cestinato INTEGER DEFAULT 0")
+
     # Indici rapidi per performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_tg_id ON memo(telegram_message_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_priorita ON memo(priorita)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_categoria ON memo(categoria)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_gcal ON memo(google_event_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_archiviato ON memo(archiviato)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_cestinato ON memo(cestinato)')
     
     conn.commit()
     conn.close()
@@ -147,6 +157,115 @@ def modifica_memo(memo_id: int, titolo: str, riassunto: str, testo_originale: st
     except Exception as e:
         print(f"[DATABASE] Errore modifica memo #{memo_id}: {e}")
         return False
+
+def imposta_stato_archiviato(memo_id: int, archiviato: bool = True) -> bool:
+    """Imposta lo stato di archiviazione (True = archiviato, False = attivo/ripristinato)."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        val = 1 if archiviato else 0
+        cursor.execute("UPDATE memo SET archiviato = ? WHERE id = ?", (val, memo_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore cambio stato archiviazione memo #{memo_id}: {e}")
+        return False
+
+def imposta_stato_archiviato_multipli(memo_ids: list[int], archiviato: bool = True) -> int:
+    """Imposta lo stato di archiviazione per una lista di ID (True = archivia, False = ripristina)."""
+    if not memo_ids:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        val = 1 if archiviato else 0
+        placeholders = ",".join("?" for _ in memo_ids)
+        cursor.execute(f"UPDATE memo SET archiviato = ? WHERE id IN ({placeholders})", (val, *memo_ids))
+        conn.commit()
+        aggiornati = cursor.rowcount
+        conn.close()
+        return aggiornati
+    except Exception as e:
+        print(f"[DATABASE] Errore archiviazione multipla memo: {e}")
+        return 0
+
+def sposta_nel_cestino(memo_id: int) -> bool:
+    """Sposta un memo nel cestino (soft delete)."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE memo SET cestinato = 1 WHERE id = ?", (memo_id,))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore spostamento nel cestino memo #{memo_id}: {e}")
+        return False
+
+def sposta_nel_cestino_multipli(memo_ids: list[int]) -> int:
+    """Sposta una lista di memo nel cestino (soft delete)."""
+    if not memo_ids:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        cursor.execute(f"UPDATE memo SET cestinato = 1 WHERE id IN ({placeholders})", tuple(memo_ids))
+        conn.commit()
+        spostati = cursor.rowcount
+        conn.close()
+        return spostati
+    except Exception as e:
+        print(f"[DATABASE] Errore spostamento multiplo nel cestino: {e}")
+        return 0
+
+def ripristina_dal_cestino(memo_id: int) -> bool:
+    """Ripristina un memo dal cestino."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE memo SET cestinato = 0 WHERE id = ?", (memo_id,))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore ripristino dal cestino memo #{memo_id}: {e}")
+        return False
+
+def ripristina_dal_cestino_multipli(memo_ids: list[int]) -> int:
+    """Ripristina una lista di memo dal cestino."""
+    if not memo_ids:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        cursor.execute(f"UPDATE memo SET cestinato = 0 WHERE id IN ({placeholders})", tuple(memo_ids))
+        conn.commit()
+        ripristinati = cursor.rowcount
+        conn.close()
+        return ripristinati
+    except Exception as e:
+        print(f"[DATABASE] Errore ripristino multiplo dal cestino: {e}")
+        return 0
+
+def svuota_cestino() -> int:
+    """Elimina definitivamente tutti i memo attualmente nel cestino."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM memo WHERE cestinato = 1")
+        conn.commit()
+        eliminati = cursor.rowcount
+        conn.close()
+        return eliminati
+    except Exception as e:
+        print(f"[DATABASE] Errore svuotamento cestino: {e}")
+        return 0
 
 if __name__ == "__main__":
     init_db()

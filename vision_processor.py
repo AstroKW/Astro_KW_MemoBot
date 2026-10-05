@@ -1,6 +1,5 @@
 import os
 import sys
-import ollama
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,27 +30,19 @@ Fornisci direttamente il testo estratto e le informazioni rilevate, senza conven
 """
 
     try:
-        response = ollama.chat(
-            model=VISION_MODEL,
-            messages=[{
-                'role': 'user',
-                'content': prompt,
-                'images': [file_path]
-            }]
-        )
-        
-        testo_estratto = response['message']['content'].strip()
+        import ai_service
+        testo_estratto = ai_service.vision_completion(image_path=file_path, prompt=prompt)
         
         if caption_utente:
             testo_completo = f"Nota dell'utente: {caption_utente}\n\nTesto/Contenuto estratto dallo screenshot:\n{testo_estratto}"
         else:
             testo_completo = testo_estratto
             
-        print("[VISION] OCR completato con successo!")
+        print("[VISION] Analisi immagine/OCR completata con successo!")
         return testo_completo
 
     except Exception as e:
-        print(f"[VISION] Errore durante l'elaborazione con {VISION_MODEL}: {e}")
+        print(f"[VISION] Errore durante l'elaborazione Vision: {e}")
         # Fallback pulito: se c'era una didascalia dell'utente restituisce quella
         if caption_utente:
             return f"Immagine ricevuta con nota: {caption_utente}"

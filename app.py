@@ -9,6 +9,7 @@ import database
 import calendar_sync
 import settings_manager
 import guida_utente
+import radar_processor
 
 # Configurazione della pagina con il logo Astro_KW come favicon
 LOGO_PATH = "LOGO_TONDO_NERO.png"
@@ -49,6 +50,16 @@ def carica_memo():
             
         if 'google_event_id' not in df.columns:
             df['google_event_id'] = None
+
+        if 'archiviato' not in df.columns:
+            df['archiviato'] = 0
+        else:
+            df['archiviato'] = df['archiviato'].fillna(0).astype(int)
+
+        if 'cestinato' not in df.columns:
+            df['cestinato'] = 0
+        else:
+            df['cestinato'] = df['cestinato'].fillna(0).astype(int)
             
     return df
 
@@ -315,12 +326,115 @@ with st.sidebar:
                 settings_manager.salva_impostazioni(settings_manager.DEFAULT_SETTINGS)
                 st.rerun()
 
+    # MOTORE INTELLIGENZA ARTIFICIALE (LOCALE / CLOUD)
+    st.markdown("---")
+    with st.expander("🤖 Motore AI (Locale & Cloud)", expanded=False):
+        import ai_service
+        active_provider = ai_service.get_provider()
+        st.markdown(f"**Attivo:** `{ai_service.get_active_provider_label()}`")
+        
+        if st.button("🧪 Testa Connessione AI", key="btn_test_ai_sidebar", use_container_width=True):
+            with st.spinner("Test in corso..."):
+                ok, msg, elapsed = ai_service.test_connessione_ai()
+                if ok:
+                    st.success(f"✅ Riuscito in {elapsed}s!")
+                else:
+                    st.error(f"❌ {msg}")
+        
+        st.markdown("---")
+        st.caption("Configura fornitore e modelli:")
+        
+        provider_options = {
+            "ollama": "🏠 Ollama (Locale - Privacy 100%)",
+            "gemini": "☁️ Google Gemini (Cloud Gratuito / Pro)",
+            "groq": "⚡ Groq (Cloud Ultra-Veloce)",
+            "openai": "💳 OpenAI ChatGPT (Cloud)",
+            "openrouter": "🌐 OpenRouter (Tutti i Modelli)",
+            "custom": "🛠️ Endpoint Personalizzato"
+        }
+        
+        idx_prov = list(provider_options.keys()).index(active_provider) if active_provider in provider_options else 0
+        sel_prov = st.selectbox(
+            "Fornitore AI:",
+            options=list(provider_options.keys()),
+            format_func=lambda x: provider_options[x],
+            index=idx_prov,
+            key="ai_provider_select_sb"
+        )
+        
+        aggiornamenti_env = {"AI_PROVIDER": sel_prov}
+        
+        if sel_prov == "ollama":
+            curr_ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+            nuovo_ollama_model = st.text_input("Modello Testo:", value=curr_ollama_model, key="cfg_ollama_model")
+            curr_ollama_vision = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b")
+            nuovo_ollama_vision = st.text_input("Modello Vision:", value=curr_ollama_vision, key="cfg_ollama_vision")
+            aggiornamenti_env["OLLAMA_MODEL"] = nuovo_ollama_model
+            aggiornamenti_env["OLLAMA_VISION_MODEL"] = nuovo_ollama_vision
+            st.caption("💡 *Richiede Ollama attivo sul PC.*")
+            
+        elif sel_prov == "gemini":
+            curr_gemini_key = os.getenv("GEMINI_API_KEY", "")
+            nuova_gemini_key = st.text_input("Gemini API Key:", value=curr_gemini_key, type="password", key="cfg_gemini_key")
+            curr_gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            nuovo_gemini_model = st.text_input("Modello Gemini:", value=curr_gemini_model, key="cfg_gemini_model")
+            aggiornamenti_env["GEMINI_API_KEY"] = nuova_gemini_key
+            aggiornamenti_env["GEMINI_MODEL"] = nuovo_gemini_model
+            st.caption("💡 *Ottieni la chiave gratuita su [Google AI Studio](https://aistudio.google.com/).*")
+            
+        elif sel_prov == "groq":
+            curr_groq_key = os.getenv("GROQ_API_KEY", "")
+            nuova_groq_key = st.text_input("Groq API Key:", value=curr_groq_key, type="password", key="cfg_groq_key")
+            curr_groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            nuovo_groq_model = st.text_input("Modello Groq:", value=curr_groq_model, key="cfg_groq_model")
+            aggiornamenti_env["GROQ_API_KEY"] = nuova_groq_key
+            aggiornamenti_env["GROQ_MODEL"] = nuovo_groq_model
+            st.caption("💡 *Ottieni la chiave su [console.groq.com](https://console.groq.com/).*")
+            
+        elif sel_prov == "openai":
+            curr_openai_key = os.getenv("OPENAI_API_KEY", "")
+            nuova_openai_key = st.text_input("OpenAI API Key:", value=curr_openai_key, type="password", key="cfg_openai_key")
+            curr_openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            nuovo_openai_model = st.text_input("Modello OpenAI:", value=curr_openai_model, key="cfg_openai_model")
+            aggiornamenti_env["OPENAI_API_KEY"] = nuova_openai_key
+            aggiornamenti_env["OPENAI_MODEL"] = nuovo_openai_model
+            
+        elif sel_prov == "openrouter":
+            curr_openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+            nuova_openrouter_key = st.text_input("OpenRouter API Key:", value=curr_openrouter_key, type="password", key="cfg_openrouter_key")
+            curr_openrouter_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct")
+            nuovo_openrouter_model = st.text_input("Modello OpenRouter:", value=curr_openrouter_model, key="cfg_openrouter_model")
+            aggiornamenti_env["OPENROUTER_API_KEY"] = nuova_openrouter_key
+            aggiornamenti_env["OPENROUTER_MODEL"] = nuovo_openrouter_model
+            
+        elif sel_prov == "custom":
+            curr_custom_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "")
+            nuovo_custom_url = st.text_input("Base URL:", value=curr_custom_url, key="cfg_custom_url")
+            curr_custom_key = os.getenv("CUSTOM_OPENAI_API_KEY", "")
+            nuova_custom_key = st.text_input("API Key:", value=curr_custom_key, type="password", key="cfg_custom_key")
+            curr_custom_model = os.getenv("CUSTOM_OPENAI_MODEL", "")
+            nuovo_custom_model = st.text_input("Modello:", value=curr_custom_model, key="cfg_custom_model")
+            aggiornamenti_env["CUSTOM_OPENAI_BASE_URL"] = nuovo_custom_url
+            aggiornamenti_env["CUSTOM_OPENAI_API_KEY"] = nuova_custom_key
+            aggiornamenti_env["CUSTOM_OPENAI_MODEL"] = nuovo_custom_model
+            
+        if st.button("💾 Salva Configurazione AI", key="btn_save_ai_cfg", type="primary", use_container_width=True):
+            if ai_service.salva_configurazione_env(aggiornamenti_env):
+                st.success("Configurazione salvata con successo!")
+                st.rerun()
+            else:
+                st.error("Errore nel salvataggio della configurazione.")
+
     # Statistiche rapide
     st.markdown("---")
     totale_memo = len(df)
-    urgenti_p1 = len(df[df['priorita'] == 1]) if not df.empty else 0
-    scadenze_tot = len(df[df['data_promemoria'].notna() & (df['data_promemoria'] != "")]) if not df.empty else 0
-    st.caption(f"📊 Totale: **{totale_memo}** | 🔴 P1: **{urgenti_p1}** | 📅 Scadenze: **{scadenze_tot}**")
+    non_cestinati = df[df['cestinato'] == 0] if not df.empty else df
+    attivi_tot = len(non_cestinati[non_cestinati['archiviato'] == 0]) if not df.empty else 0
+    archiviati_tot = len(non_cestinati[non_cestinati['archiviato'] == 1]) if not df.empty else 0
+    cestinati_tot = len(df[df['cestinato'] == 1]) if not df.empty else 0
+    urgenti_p1 = len(non_cestinati[(non_cestinati['priorita'] == 1) & (non_cestinati['archiviato'] == 0)]) if not df.empty else 0
+    scadenze_tot = len(non_cestinati[non_cestinati['data_promemoria'].notna() & (non_cestinati['data_promemoria'] != "") & (non_cestinati['archiviato'] == 0)]) if not df.empty else 0
+    st.caption(f"📊 Attivi: **{attivi_tot}** | 🔴 P1: **{urgenti_p1}** | 📅 Scadenze: **{scadenze_tot}** | 📦 Archiviati: **{archiviati_tot}** | 🗑️ Cestino: **{cestinati_tot}**")
 
 # -------------------------------------------------------------
 # GESTIONE CONTENUTO PRINCIPALE
@@ -359,14 +473,22 @@ else:
         df_filtrato = df_filtrato.sort_values(by="titolo", ascending=True)
 
     # -------------------------------------------------------------
-    # SCHEDE TABS: AGENDA + MACRO-AREE
+    # SCHEDE TABS: AGENDA + MACRO-AREE + ARCHIVIO + CESTINO
     # -------------------------------------------------------------
-    df_agenda = df_filtrato[df_filtrato['data_promemoria'].notna() & (df_filtrato['data_promemoria'] != "")]
+    df_non_cestinati = df_filtrato[df_filtrato['cestinato'] == 0]
+    df_attivi = df_non_cestinati[df_non_cestinati['archiviato'] == 0]
+    df_archiviati = df_non_cestinati[df_non_cestinati['archiviato'] == 1]
+    df_cestinati = df_filtrato[df_filtrato['cestinato'] == 1]
+
+    df_agenda = df_attivi[df_attivi['data_promemoria'].notna() & (df_attivi['data_promemoria'] != "")]
     count_agenda = len(df_agenda)
+    count_archiviati = len(df_archiviati)
+    count_cestinati = len(df_cestinati)
 
     categorie_tab = [
         ("Tutti", "📋 Tutti"),
         ("Agenda", f"📅 Agenda & Scadenze ({count_agenda})"),
+        ("Radar", "🔭 Astro_KW Radar"),
         ("Lavoro", "💼 Lavoro"),
         ("Sport", "⚽ Sport"),
         ("Tempo Libero", "🏖️ Tempo Libero"),
@@ -375,18 +497,20 @@ else:
         ("Cultura/Notizie", "📰 Notizie"),
         ("Spesa/Acquisti", "🛒 Spesa"),
         ("Altro", "📁 Altro"),
+        ("Archivio", f"📦 Archivio ({count_archiviati})"),
+        ("Cestino", f"🗑️ Cestino ({count_cestinati})"),
         ("Guida", "📖 Guida Utente")
     ]
     
     nomi_tab = []
     for cat_id, cat_label in categorie_tab:
         if cat_id == "Tutti":
-            count = len(df_filtrato)
+            count = len(df_attivi)
             nomi_tab.append(f"{cat_label} ({count})")
-        elif cat_id in ["Agenda", "Guida"]:
+        elif cat_id in ["Agenda", "Guida", "Radar", "Archivio", "Cestino"]:
             nomi_tab.append(cat_label)
         else:
-            count = len(df_filtrato[df_filtrato['categoria'] == cat_id])
+            count = len(df_attivi[df_attivi['categoria'] == cat_id])
             nomi_tab.append(f"{cat_label} ({count})")
 
     tabs = st.tabs(nomi_tab)
@@ -396,14 +520,20 @@ else:
             if cat_id == "Guida":
                 guida_utente.render_scheda_guida()
                 continue
-
-            if cat_id == "Tutti":
-                df_sezione = df_filtrato
+            elif cat_id == "Radar":
+                radar_processor.render_scheda_radar(df[df['cestinato'] == 0])
+                continue
+            elif cat_id == "Cestino":
+                df_sezione = df_cestinati
+            elif cat_id == "Archivio":
+                df_sezione = df_archiviati
+            elif cat_id == "Tutti":
+                df_sezione = df_attivi
             elif cat_id == "Agenda":
                 # Vista speciale Agenda ordinata per data scadenza
                 df_sezione = df_agenda.sort_values(by="data_promemoria", ascending=True)
             else:
-                df_sezione = df_filtrato[df_filtrato['categoria'] == cat_id]
+                df_sezione = df_attivi[df_attivi['categoria'] == cat_id]
 
             if df_sezione.empty:
                 st.info(f"Nessun elemento presente nella sezione **{cat_label}** con i filtri attuali.")
@@ -437,7 +567,7 @@ else:
                 n_sel = len(selezionati)
 
                 # Toolbar di Selezione e Azioni di Gruppo
-                col_info, col_sel_all, col_sel_none, col_bulk_del = st.columns([3, 1.2, 1.2, 2.2], vertical_alignment="center")
+                col_info, col_sel_all, col_sel_none, col_bulk_action, col_bulk_del = st.columns([2.6, 1.1, 1.1, 2.2, 2.2], vertical_alignment="center")
                 
                 with col_info:
                     st.write(f"Mostrati **{len(df_sezione)}** memo | **{n_sel}** selezionati")
@@ -454,27 +584,80 @@ else:
                             st.session_state[f"sel_{cat_id}_{m_id}"] = False
                         st.rerun()
 
-                with col_bulk_del:
-                    if n_sel > 0:
-                        with st.popover(f"🗑️ Elimina ({n_sel})", use_container_width=True):
-                            st.markdown(f"⚠️ **Eliminazione Multipla**")
-                            st.write(f"Vuoi eliminare definitivamente i **{n_sel}** memo selezionati?")
-                            if st.button(f"🔥 Sì, Elimina {n_sel} memo", type="primary", key=f"confirm_bulk_{cat_id}", use_container_width=True):
-                                cancellati = database.elimina_memo_multipli(selezionati)
+                with col_bulk_action:
+                    if cat_id == "Cestino":
+                        if n_sel > 0:
+                            if st.button(f"↩️ Ripristina ({n_sel})", key=f"btn_bulk_restore_trash_{cat_id}", help="Ripristina i memo selezionati dal cestino", use_container_width=True):
+                                ripristinati = database.ripristina_dal_cestino_multipli(selezionati)
                                 for m_id in selezionati:
                                     st.session_state.pop(f"sel_{cat_id}_{m_id}", None)
-                                st.success(f"{cancellati} memo eliminati con successo!")
+                                st.success(f"{ripristinati} memo ripristinati dal Cestino!")
                                 st.rerun()
+                        else:
+                            st.button("↩️ Ripristina", disabled=True, key=f"btn_bulk_restore_trash_dis_{cat_id}", use_container_width=True)
+                    elif cat_id == "Archivio":
+                        if n_sel > 0:
+                            if st.button(f"↩️ Ripristina ({n_sel})", key=f"btn_bulk_restore_{cat_id}", help="Riporta i memo selezionati tra quelli attivi", use_container_width=True):
+                                ripristinati = database.imposta_stato_archiviato_multipli(selezionati, archiviato=False)
+                                for m_id in selezionati:
+                                    st.session_state.pop(f"sel_{cat_id}_{m_id}", None)
+                                st.success(f"{ripristinati} memo ripristinati tra i compiti attivi!")
+                                st.rerun()
+                        else:
+                            st.button("↩️ Ripristina", disabled=True, key=f"btn_bulk_restore_dis_{cat_id}", use_container_width=True)
                     else:
-                        st.button("🗑️ Elimina selezionati", disabled=True, key=f"btn_bulk_del_dis_{cat_id}", use_container_width=True)
+                        if n_sel > 0:
+                            if st.button(f"📦 Archivia ({n_sel})", key=f"btn_bulk_arch_{cat_id}", help="Archivia i memo selezionati", use_container_width=True):
+                                archiviati = database.imposta_stato_archiviato_multipli(selezionati, archiviato=True)
+                                for m_id in selezionati:
+                                    st.session_state.pop(f"sel_{cat_id}_{m_id}", None)
+                                st.success(f"{archiviati} memo archiviati con successo!")
+                                st.rerun()
+                        else:
+                            st.button("📦 Archivia", disabled=True, key=f"btn_bulk_arch_dis_{cat_id}", use_container_width=True)
+
+                with col_bulk_del:
+                    if cat_id == "Cestino":
+                        if len(df_sezione) > 0:
+                            with st.popover("🔥 Svuota Cestino", use_container_width=True):
+                                st.markdown("⚠️ **Svuotamento Cestino**")
+                                st.write("Vuoi eliminare DEFINITIVAMENTE tutti i memo presenti nel cestino? L'operazione non è reversibile.")
+                                if st.button("🔥 Sì, Svuota tutto", type="primary", key=f"confirm_empty_trash_{cat_id}", use_container_width=True):
+                                    eliminati = database.svuota_cestino()
+                                    for m_id in ids_sezione:
+                                        st.session_state.pop(f"sel_{cat_id}_{m_id}", None)
+                                    st.success(f"{eliminati} memo eliminati definitivamente!")
+                                    st.rerun()
+                        else:
+                            st.button("🔥 Cestino vuoto", disabled=True, key=f"btn_empty_trash_dis_{cat_id}", use_container_width=True)
+                    else:
+                        if n_sel > 0:
+                            with st.popover(f"🗑️ Cestina ({n_sel})", use_container_width=True):
+                                st.markdown(f"🗑️ **Sposta nel Cestino**")
+                                st.write(f"Vuoi spostare nel Cestino i **{n_sel}** memo selezionati?")
+                                st.caption("Potrai ripristinarli in qualunque momento dalla scheda Cestino.")
+                                if st.button(f"Sì, Cestina {n_sel} memo", type="primary", key=f"confirm_bulk_trash_{cat_id}", use_container_width=True):
+                                    cestinati = database.sposta_nel_cestino_multipli(selezionati)
+                                    for m_id in selezionati:
+                                        st.session_state.pop(f"sel_{cat_id}_{m_id}", None)
+                                    st.success(f"{cestinati} memo spostati nel Cestino!")
+                                    st.rerun()
+                        else:
+                            st.button("🗑️ Cestina selezionati", disabled=True, key=f"btn_bulk_del_dis_{cat_id}", use_container_width=True)
 
                 st.write("")
 
                 for _, row in df_sezione.iterrows():
                     memo_id = int(row['id'])
                     p_val = int(row['priorita'])
+                    is_trashed = int(row.get('cestinato', 0)) == 1
+                    is_archived = int(row.get('archiviato', 0)) == 1
                     
-                    if p_val == 1:
+                    if is_trashed:
+                        badge_p = "🗑️ [CESTINATO]"
+                    elif is_archived:
+                        badge_p = "⚪ [A]"
+                    elif p_val == 1:
                         badge_p = "🔴 [P1 - URGENTE]"
                     elif p_val == 2:
                         badge_p = "🟡 [P2 - MEDIA]"
@@ -566,83 +749,154 @@ else:
                                 st.markdown("**Tags:** " + " ".join(tags_list))
 
                             st.markdown("---")
-                            
-                            # BARRA DELLE AZIONI (CONDIVIDI, MODIFICA ED ELIMINA)
-                            col_share, col_azioni, col_elimina = st.columns([1.6, 1.4, 1])
 
-                            with col_share:
-                                with st.popover("📲 Condividi / Copia"):
-                                    testo_condivisione = f"📌 *{titolo_memo}*\n\n💡 *Riassunto:*\n{row['riassunto']}"
-                                    if promemoria_val:
-                                        testo_condivisione += f"\n\n⏰ *Scadenza:* {promemoria_val}"
-                                    if row['link_originale']:
-                                        testo_condivisione += f"\n\n🔗 *Fonte:* {row['link_originale']}"
-                                    
-                                    st.caption("Copia con l'icona in alto a destra o clicca per inviare:")
-                                    st.code(testo_condivisione, language="markdown")
-                                    
-                                    enc_text = urllib.parse.quote(testo_condivisione)
-                                    url_wa = f"https://api.whatsapp.com/send?text={enc_text}"
-                                    link_param = urllib.parse.quote(str(row['link_originale'] or ''))
-                                    url_tg = f"https://t.me/share/url?url={link_param}&text={enc_text}" if row['link_originale'] else f"https://t.me/share/url?text={enc_text}"
-                                    
-                                    c_wa, c_tg = st.columns(2)
-                                    with c_wa:
-                                        st.markdown(f'''
-                                            <a href="{url_wa}" target="_blank" style="text-decoration: none;">
-                                                <button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
-                                                    🟢 WhatsApp
-                                                </button>
-                                            </a>
-                                        ''', unsafe_allow_html=True)
-                                    with c_tg:
-                                        st.markdown(f'''
-                                            <a href="{url_tg}" target="_blank" style="text-decoration: none;">
-                                                <button style="width: 100%; background-color: #229ED9; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
-                                                    🔵 Telegram
-                                                </button>
-                                            </a>
-                                        ''', unsafe_allow_html=True)
+                            # BARRA DELLE AZIONI
+                            if is_trashed:
+                                col_share, col_ripristina, col_elimina_def = st.columns([1.5, 1.4, 1.4])
 
-                            with col_elimina:
-                                with st.popover("🗑️ Elimina"):
-                                    st.write(f"Vuoi eliminare definitivamente questo memo #{memo_id}?")
-                                    if st.button("Sì, Elimina", key=f"del_{cat_id}_{memo_id}", type="primary"):
-                                        if database.elimina_memo(memo_id):
-                                            st.session_state.pop(f"sel_{cat_id}_{memo_id}", None)
-                                            st.success("Eliminato!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Errore eliminazione.")
+                                with col_share:
+                                    with st.popover("📲 Condividi / Copia"):
+                                        testo_condivisione = f"📌 *{titolo_memo}*\n\n💡 *Riassunto:*\n{row['riassunto']}"
+                                        if promemoria_val:
+                                            testo_condivisione += f"\n\n⏰ *Scadenza:* {promemoria_val}"
+                                        if row['link_originale']:
+                                            testo_condivisione += f"\n\n🔗 *Fonte:* {row['link_originale']}"
+                                        
+                                        st.caption("Copia con l'icona in alto a destra o clicca per inviare:")
+                                        st.code(testo_condivisione, language="markdown")
+                                        
+                                        enc_text = urllib.parse.quote(testo_condivisione)
+                                        url_wa = f"https://api.whatsapp.com/send?text={enc_text}"
+                                        link_param = urllib.parse.quote(str(row['link_originale'] or ''))
+                                        url_tg = f"https://t.me/share/url?url={link_param}&text={enc_text}" if row['link_originale'] else f"https://t.me/share/url?text={enc_text}"
+                                        
+                                        c_wa, c_tg = st.columns(2)
+                                        with c_wa:
+                                            st.markdown(f'''
+                                                <a href="{url_wa}" target="_blank" style="text-decoration: none;">
+                                                     <button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                                                         🟢 WhatsApp
+                                                     </button>
+                                                </a>
+                                            ''', unsafe_allow_html=True)
+                                        with c_tg:
+                                            st.markdown(f'''
+                                                <a href="{url_tg}" target="_blank" style="text-decoration: none;">
+                                                     <button style="width: 100%; background-color: #229ED9; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                                                         🔵 Telegram
+                                                     </button>
+                                                </a>
+                                            ''', unsafe_allow_html=True)
 
-                            with col_azioni:
-                                with st.popover("✏️ Modifica"):
-                                    st.write(f"**Modifica Memo #{memo_id}**")
-                                    mod_titolo = st.text_input("Titolo:", value=titolo_memo, key=f"edit_tit_{cat_id}_{memo_id}")
-                                    
-                                    c1, c2 = st.columns(2)
-                                    with c1:
-                                        idx_cat = database.CATEGORIE_STANDARD.index(cat_str) if cat_str in database.CATEGORIE_STANDARD else 7
-                                        mod_categoria = st.selectbox("Categoria:", database.CATEGORIE_STANDARD, index=idx_cat, key=f"edit_cat_{cat_id}_{memo_id}")
-                                    with c2:
-                                        mod_priorita = st.selectbox("Priorità:", [1, 2, 3], index=[1, 2, 3].index(p_val if p_val in [1, 2, 3] else 3), key=f"edit_pri_{cat_id}_{memo_id}", format_func=lambda x: {1: "🔴 P1 - Alta/Urgente", 2: "🟡 P2 - Media", 3: "🟢 P3 - Normale"}[x])
-                                    
-                                    mod_promemoria = st.text_input("Data/Ora Promemoria (es: 2026-10-15 20:00 o vuoto):", value=promemoria_val, key=f"edit_pro_{cat_id}_{memo_id}")
-                                    mod_riassunto = st.text_area("Riassunto AI:", value=str(row['riassunto']), key=f"edit_ria_{cat_id}_{memo_id}")
-                                    mod_tags = st.text_input("Tags (separati da virgola):", value=str(row['tags']), key=f"edit_tag_{cat_id}_{memo_id}")
-                                    mod_testo = st.text_area("Testo originale / trascrizione:", value=str(row['testo_originale']), key=f"edit_txt_{cat_id}_{memo_id}")
-
-                                    if st.button("💾 Salva Modifiche", key=f"btn_save_{cat_id}_{memo_id}"):
-                                        conn_m = database.get_connection()
-                                        cur_m = conn_m.cursor()
-                                        # Se la data è stata modificata, azzera google_event_id per consentire una nuova sincronizzazione
-                                        nuovo_gcal_id = row.get('google_event_id') if mod_promemoria == promemoria_val else None
-                                        cur_m.execute('''
-                                            UPDATE memo
-                                            SET titolo = ?, riassunto = ?, testo_originale = ?, categoria = ?, priorita = ?, tags = ?, data_promemoria = ?, google_event_id = ?
-                                            WHERE id = ?
-                                        ''', (mod_titolo, mod_riassunto, mod_testo, mod_categoria, mod_priorita, mod_tags, mod_promemoria if mod_promemoria else None, nuovo_gcal_id, memo_id))
-                                        conn_m.commit()
-                                        conn_m.close()
-                                        st.success("Modifiche salvate con successo!")
+                                with col_ripristina:
+                                    if st.button("↩️ Ripristina Memo", key=f"btn_res_trash_{cat_id}_{memo_id}", help="Ripristina questo memo dal cestino", use_container_width=True):
+                                        database.ripristina_dal_cestino(memo_id)
+                                        st.session_state.pop(f"sel_{cat_id}_{memo_id}", None)
+                                        st.success("Memo ripristinato dal Cestino!")
                                         st.rerun()
+
+                                with col_elimina_def:
+                                    with st.popover("🔥 Elimina per Sempre"):
+                                        st.write(f"Vuoi eliminare definitivamente questo memo #{memo_id}?")
+                                        st.caption("⚠️ Questa azione è irreversibile.")
+                                        if st.button("Sì, Elimina Definitivamente", key=f"del_def_{cat_id}_{memo_id}", type="primary"):
+                                            if database.elimina_memo(memo_id):
+                                                st.session_state.pop(f"sel_{cat_id}_{memo_id}", None)
+                                                st.success("Memo eliminato definitivamente!")
+                                                st.rerun()
+                                            else:
+                                                st.error("Errore eliminazione.")
+
+                            else:
+                                col_share, col_azioni, col_archivia, col_elimina = st.columns([1.5, 1.3, 1.4, 1.1])
+
+                                with col_share:
+                                    with st.popover("📲 Condividi / Copia"):
+                                        testo_condivisione = f"📌 *{titolo_memo}*\n\n💡 *Riassunto:*\n{row['riassunto']}"
+                                        if promemoria_val:
+                                            testo_condivisione += f"\n\n⏰ *Scadenza:* {promemoria_val}"
+                                        if row['link_originale']:
+                                            testo_condivisione += f"\n\n🔗 *Fonte:* {row['link_originale']}"
+                                        
+                                        st.caption("Copia con l'icona in alto a destra o clicca per inviare:")
+                                        st.code(testo_condivisione, language="markdown")
+                                        
+                                        enc_text = urllib.parse.quote(testo_condivisione)
+                                        url_wa = f"https://api.whatsapp.com/send?text={enc_text}"
+                                        link_param = urllib.parse.quote(str(row['link_originale'] or ''))
+                                        url_tg = f"https://t.me/share/url?url={link_param}&text={enc_text}" if row['link_originale'] else f"https://t.me/share/url?text={enc_text}"
+                                        
+                                        c_wa, c_tg = st.columns(2)
+                                        with c_wa:
+                                            st.markdown(f'''
+                                                <a href="{url_wa}" target="_blank" style="text-decoration: none;">
+                                                     <button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                                                         🟢 WhatsApp
+                                                     </button>
+                                                </a>
+                                            ''', unsafe_allow_html=True)
+                                        with c_tg:
+                                            st.markdown(f'''
+                                                <a href="{url_tg}" target="_blank" style="text-decoration: none;">
+                                                     <button style="width: 100%; background-color: #229ED9; color: white; border: none; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                                                         🔵 Telegram
+                                                     </button>
+                                                </a>
+                                            ''', unsafe_allow_html=True)
+
+                                with col_azioni:
+                                    with st.popover("✏️ Modifica"):
+                                        st.write(f"**Modifica Memo #{memo_id}**")
+                                        mod_titolo = st.text_input("Titolo:", value=titolo_memo, key=f"edit_tit_{cat_id}_{memo_id}")
+                                        
+                                        c1, c2 = st.columns(2)
+                                        with c1:
+                                            idx_cat = database.CATEGORIE_STANDARD.index(cat_str) if cat_str in database.CATEGORIE_STANDARD else 7
+                                            mod_categoria = st.selectbox("Categoria:", database.CATEGORIE_STANDARD, index=idx_cat, key=f"edit_cat_{cat_id}_{memo_id}")
+                                        with c2:
+                                            mod_priorita = st.selectbox("Priorità:", [1, 2, 3], index=[1, 2, 3].index(p_val if p_val in [1, 2, 3] else 3), key=f"edit_pri_{cat_id}_{memo_id}", format_func=lambda x: {1: "🔴 P1 - Alta/Urgente", 2: "🟡 P2 - Media", 3: "🟢 P3 - Normale"}[x])
+                                        
+                                        mod_promemoria = st.text_input("Data/Ora Promemoria (es: 2026-10-15 20:00 o vuoto):", value=promemoria_val, key=f"edit_pro_{cat_id}_{memo_id}")
+                                        mod_archiviato = st.checkbox("Sposta in Archivio (Completato)", value=is_archived, key=f"edit_arch_{cat_id}_{memo_id}")
+                                        mod_riassunto = st.text_area("Riassunto AI:", value=str(row['riassunto']), key=f"edit_ria_{cat_id}_{memo_id}")
+                                        mod_tags = st.text_input("Tags (separati da virgola):", value=str(row['tags']), key=f"edit_tag_{cat_id}_{memo_id}")
+                                        mod_testo = st.text_area("Testo originale / trascrizione:", value=str(row['testo_originale']), key=f"edit_txt_{cat_id}_{memo_id}")
+
+                                        if st.button("💾 Salva Modifiche", key=f"btn_save_{cat_id}_{memo_id}"):
+                                            conn_m = database.get_connection()
+                                            cur_m = conn_m.cursor()
+                                            # Se la data è stata modificata, azzera google_event_id per consentire una nuova sincronizzazione
+                                            nuovo_gcal_id = row.get('google_event_id') if mod_promemoria == promemoria_val else None
+                                            cur_m.execute('''
+                                                UPDATE memo
+                                                SET titolo = ?, riassunto = ?, testo_originale = ?, categoria = ?, priorita = ?, tags = ?, data_promemoria = ?, google_event_id = ?, archiviato = ?
+                                                WHERE id = ?
+                                            ''', (mod_titolo, mod_riassunto, mod_testo, mod_categoria, mod_priorita, mod_tags, mod_promemoria if mod_promemoria else None, nuovo_gcal_id, 1 if mod_archiviato else 0, memo_id))
+                                            conn_m.commit()
+                                            conn_m.close()
+                                            st.success("Modifiche salvate con successo!")
+                                            st.rerun()
+
+                                with col_archivia:
+                                    if is_archived:
+                                        if st.button("↩️ Ripristina", key=f"btn_res_single_{cat_id}_{memo_id}", help="Riporta questo memo tra i compiti attivi", use_container_width=True):
+                                            database.imposta_stato_archiviato(memo_id, archiviato=False)
+                                            st.success("Memo ripristinato tra i compiti attivi!")
+                                            st.rerun()
+                                    else:
+                                        if st.button("📦 Archivia", key=f"btn_arch_single_{cat_id}_{memo_id}", help="Archivia questo memo completato", use_container_width=True):
+                                            database.imposta_stato_archiviato(memo_id, archiviato=True)
+                                            st.success("Memo archiviato con successo!")
+                                            st.rerun()
+
+                                with col_elimina:
+                                    with st.popover("🗑️ Cestina"):
+                                        st.write(f"Vuoi spostare questo memo #{memo_id} nel Cestino?")
+                                        st.caption("Potrai ripristinarlo in qualunque momento dalla scheda Cestino.")
+                                        if st.button("Sì, Cestina", key=f"trash_{cat_id}_{memo_id}", type="primary"):
+                                            if database.sposta_nel_cestino(memo_id):
+                                                st.session_state.pop(f"sel_{cat_id}_{memo_id}", None)
+                                                st.success("Memo spostato nel Cestino!")
+                                                st.rerun()
+                                            else:
+                                                st.error("Errore nello spostamento.")
