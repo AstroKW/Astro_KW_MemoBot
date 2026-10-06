@@ -154,6 +154,8 @@ def render_scheda_guida():
           * **📄 CSV (Excel):** Per fogli di calcolo e analisi dati.
           * **📦 JSON:** Per backup tecnici o integrazioni con altri applicativi.
           * **📝 Markdown:** Per archivio documentale leggibile o importazione in Obsidian / Notion.
+        """)
+
     with st.expander("🤖 9. Motori AI: Locale (Privacy Assoluta) vs Cloud (Universale per Qualsiasi PC)", expanded=False):
         st.markdown("""
         MemoBot è completamente **agnostico rispetto al motore di intelligenza artificiale**: puoi scegliere la modalità ideale per le tue esigenze e per il tuo computer direttamente dalla barra laterale sinistra (sezione *🤖 Motore AI*):
