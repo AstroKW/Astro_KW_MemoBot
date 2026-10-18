@@ -201,7 +201,8 @@ def vision_completion(image_path: str, prompt: str) -> str:
                 "role": "user",
                 "content": prompt,
                 "images": [image_path]
-            }]
+            }],
+            options={"num_ctx": 2048, "temperature": 0.2}
         )
         return res["message"]["content"].strip()
     else:
