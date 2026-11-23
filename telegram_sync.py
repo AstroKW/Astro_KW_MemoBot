@@ -30,9 +30,29 @@ for uid in ALLOWED_USER_IDS_RAW.split(","):
     if uid_clean.isdigit():
         ALLOWED_USER_IDS.add(int(uid_clean))
 
-# Cartella temporanea per scaricare audio/video/foto da Telegram
+# Cartella temporanea per scaricare audio/video da Telegram
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# Cartella per allegati multimediali permanenti (foto, screenshot)
+ALLEGATI_DIR = "allegati"
+os.makedirs(ALLEGATI_DIR, exist_ok=True)
+
+def ottimizza_e_salva_immagine(file_sorgente: str, file_destinazione: str):
+    """Ridimensiona l'immagine se supera 1280px e la salva compressa in JPEG per occupare pochissimo spazio."""
+    try:
+        from PIL import Image
+        with Image.open(file_sorgente) as img:
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            max_size = 1280
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            img.save(file_destinazione, "JPEG", quality=82, optimize=True)
+    except Exception as e:
+        print(f"[IMMAGINE] Avviso ottimizzazione: {e}, copio file originale.")
+        import shutil
+        shutil.copy2(file_sorgente, file_destinazione)
 
 # Regex per identificare URL ovunque nel testo
 URL_REGEX = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+', re.IGNORECASE)
@@ -40,12 +60,13 @@ URL_REGEX = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+', re.IGNORECASE)
 async def estrai_dati_messaggio(msg, bot):
     """
     Scarica eventuali media e ricava il testo, link e tipo da un singolo messaggio Telegram.
-    Restituisce un dizionario coi dettagli e il percorso temporaneo del file scaricato.
+    Restituisce un dizionario coi dettagli, percorso temporaneo e percorso allegato permanente.
     """
     tipo_contenuto = "testo"
     testo_originale = ""
     link_originale = ""
     percorso_file = None
+    allegato_path = None
 
     testo_ricevuto = msg.text or msg.caption or ""
     trovati_link = URL_REGEX.findall(testo_ricevuto)
@@ -60,16 +81,25 @@ async def estrai_dati_messaggio(msg, bot):
         if link_originale:
             tipo_contenuto = "link"
 
-    # 2. FOTO / SCREENSHOT (con OCR)
+    # 2. FOTO / SCREENSHOT (con OCR e salvataggio allegato permanente)
     elif msg.photo:
         tipo_contenuto = "immagine"
         file_obj = msg.photo[-1]
         telegram_file = await bot.get_file(file_obj.file_id)
-        percorso_file = os.path.join(DOWNLOAD_DIR, f"foto_{msg.message_id}.jpg")
-        await telegram_file.download_to_drive(percorso_file)
+        temp_file = os.path.join(DOWNLOAD_DIR, f"temp_foto_{msg.message_id}.jpg")
+        await telegram_file.download_to_drive(temp_file)
         
+        percorso_allegato = os.path.join(ALLEGATI_DIR, f"foto_{msg.message_id}.jpg")
+        ottimizza_e_salva_immagine(temp_file, percorso_allegato)
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
+
+        allegato_path = percorso_allegato
         print(f"Scansione OCR screenshot/foto #{msg.message_id}...")
-        testo_originale = vision_processor.analizza_immagine(percorso_file, caption_utente=msg.caption)
+        testo_originale = vision_processor.analizza_immagine(percorso_allegato, caption_utente=msg.caption)
         if link_originale:
             tipo_contenuto = "link"
 
@@ -113,6 +143,7 @@ async def estrai_dati_messaggio(msg, bot):
         "testo_originale": testo_originale.strip(),
         "link_originale": link_originale,
         "percorso_file": percorso_file,
+        "allegato_path": allegato_path,
         "data_creazione": data_locale
     }
 
@@ -192,6 +223,10 @@ async def scarica_e_elabora():
                 padre["link_originale"] = item["link_originale"]
                 padre["tipo_contenuto"] = "link"
 
+            # Se il figlio contiene un allegato e il padre no, memorizza l'allegato
+            if not padre.get("allegato_path") and item.get("allegato_path"):
+                padre["allegato_path"] = item["allegato_path"]
+
             # Rimuovi file temporanei del messaggio integrato
             if item["percorso_file"] and os.path.exists(item["percorso_file"]):
                 try:
@@ -223,13 +258,15 @@ async def scarica_e_elabora():
                 data_promemoria = analisi_ai.get("data_promemoria", memo_db.get("data_promemoria"))
                 tags_str = ", ".join(analisi_ai.get("tags", []))
 
+                allegato_da_aggiornare = item.get("allegato_path")
+
                 conn = database.get_connection()
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE memo
-                    SET titolo = ?, riassunto = ?, testo_originale = ?, link_originale = ?, tags = ?, categoria = ?, priorita = ?, data_promemoria = ?
+                    SET titolo = ?, riassunto = ?, testo_originale = ?, link_originale = ?, tags = ?, categoria = ?, priorita = ?, data_promemoria = ?, allegato_path = COALESCE(allegato_path, ?)
                     WHERE id = ?
-                ''', (titolo, riassunto, testo_integrato, link_effettivo, tags_str, categoria, priorita, data_promemoria, memo_db["id"]))
+                ''', (titolo, riassunto, testo_integrato, link_effettivo, tags_str, categoria, priorita, data_promemoria, allegato_da_aggiornare, memo_db["id"]))
                 conn.commit()
                 conn.close()
 
@@ -251,6 +288,7 @@ async def scarica_e_elabora():
         testo_originale = memo["testo_originale"]
         link_originale = memo["link_originale"]
         percorso_file = memo["percorso_file"]
+        allegato_path = memo.get("allegato_path")
 
         testo_per_ai = testo_originale
         titolo_suggerito = ""
@@ -275,14 +313,56 @@ async def scarica_e_elabora():
         conn = database.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO memo (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags, categoria, priorita, telegram_message_id, data_promemoria, data_creazione)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags_str, categoria, priorita, msg_id, data_promemoria, data_creazione))
+            INSERT INTO memo (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags, categoria, priorita, telegram_message_id, data_promemoria, data_creazione, allegato_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags_str, categoria, priorita, msg_id, data_promemoria, data_creazione, allegato_path))
         conn.commit()
+        new_memo_id = cursor.lastrowid
         conn.close()
 
         nota_promemoria = f" | 📅 {data_promemoria}" if data_promemoria else ""
-        print(f"[OK] Salvato memo #{cursor.lastrowid}: '{titolo}' [Cat: {categoria} | P{priorita}{nota_promemoria} | Tags: {tags_str}]\n")
+        print(f"[OK] Salvato memo #{new_memo_id}: '{titolo}' [Cat: {categoria} | P{priorita}{nota_promemoria} | Tags: {tags_str}]\n")
+
+        # Generazione automatica podcast se è presente un link ad articolo web
+        if link_originale and not ("youtube.com" in link_originale.lower() or "youtu.be" in link_originale.lower() or "instagram.com" in link_originale.lower()):
+            try:
+                import podcast_scraper
+                import podcast_tts
+                import podcast_feed
+                import settings_manager
+
+                settings = settings_manager.carica_impostazioni()
+                if settings.get("podcast_auto_generate", True):
+                    voce = settings.get("podcast_voice", "im_nicola")
+                    velocita = float(settings.get("podcast_speed", 1.0))
+                    engine = settings.get("podcast_engine", "kokoro")
+
+                    print(f"🎙️ [PODCAST] Generazione automatica per il link: {link_originale}...")
+                    art = podcast_scraper.estrai_articolo_pulito(link_originale)
+                    if art.get("successo") and len(art.get("testo_pulito", "")) >= 150:
+                        intro, completo = podcast_scraper.genera_intro_podcast(art)
+                        fonte_art = art.get("fonte") or categoria
+                        res_audio = podcast_tts.genera_audio_podcast(
+                            completo,
+                            titolo=titolo,
+                            fonte=fonte_art,
+                            id_riferimento=new_memo_id,
+                            voce=voce,
+                            velocita=velocita,
+                            engine=engine
+                        )
+                        if res_audio.get("successo"):
+                            database.imposta_podcast_memo(
+                                memo_id=new_memo_id,
+                                audio_path=res_audio["percorso_relativo"],
+                                durata=res_audio["durata_secondi"],
+                                intro=intro,
+                                incluso=1
+                            )
+                            podcast_feed.genera_feed_rss()
+                            print(f"📻 [PODCAST PRONTO] Episodio '{titolo}' pronto e aggiunto al feed AntennaPod!\n")
+            except Exception as e:
+                print(f"[PODCAST] Avviso generazione podcast fallita (non bloccante): {e}\n")
 
         # Pulizia file temporaneo
         if percorso_file and os.path.exists(percorso_file):

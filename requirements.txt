@@ -12,3 +12,11 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 openai>=1.0.0
+trafilatura
+kokoro-onnx
+soundfile
+edge-tts
+mutagen
+qrcode
+pymupdf
+numpy

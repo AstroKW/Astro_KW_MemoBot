@@ -7,6 +7,10 @@ __pycache__/
 downloads/*
 !downloads/.gitkeep
 
+# Cartella allegati multimediali permanenti (foto, screenshot)
+allegati/*
+!allegati/.gitkeep
+
 # File di ambiente con token e credenziali
 .env
 
@@ -24,3 +28,22 @@ IDCLIENT_OAuth_Google.*
 # Preferenze utente locali
 user_settings.json
 *.docx
+
+# Modelli neurali pesanti (Kokoro ONNX, XTTS)
+models/*
+!models/.gitkeep
+*.onnx
+*.bin
+
+# Cartella file podcast generati
+podcasts/*
+!podcasts/.gitkeep
+
+# Worker isolato Voice Cloning GPU
+worker_tts/venv/
+worker_tts/__pycache__/
+
+# File campioni vocali personali
+voci/*
+!voci/.gitkeep
+!voci/README_VOCI.md

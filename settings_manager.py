@@ -56,6 +56,10 @@ PRESETS = {
 
 DEFAULT_SETTINGS = {
     "preset": "Astro Dark (Predefinito)",
+    "podcast_engine": "kokoro",
+    "podcast_voice": "im_nicola",
+    "podcast_speed": 1.0,
+    "podcast_auto_generate": True,
     **PRESETS["Astro Dark (Predefinito)"]
 }
 
@@ -123,6 +127,8 @@ def genera_css_accessibilita(settings: dict) -> str:
     css = f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+    @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
     /* Variabili native di Streamlit per forzare il tema in tutto il framework */
     :root, [data-testid="stAppViewContainer"], .stApp {{
@@ -133,7 +139,8 @@ def genera_css_accessibilita(settings: dict) -> str:
     }}
 
     html, body, [class*="css"], .stApp, 
-    .stApp p, .stApp span, .stApp label, 
+    .stApp p, .stApp label,
+    .stApp span:not([data-testid*="stIcon"]):not([class*="material"]):not([translate="no"]),
     .stApp div[data-testid="stMarkdownContainer"] *,
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
     .stApp div[data-testid="stCaptionContainer"] *,
@@ -143,19 +150,31 @@ def genera_css_accessibilita(settings: dict) -> str:
         color: {txt} !important;
     }}
 
-    /* Preserva i font nativi per le icone di sistema ed expander Streamlit (evita la scritta 'keyboard_arrow_right') */
+    /* Preserva i font nativi per le icone di sistema, freccia sidebar ed expander Streamlit */
+    [data-testid="stSidebarCollapseButton"] *,
+    [data-testid="stSidebarCollapsedControl"] *,
     [data-testid="stExpanderToggleIcon"],
     [data-testid="stIconMaterial"],
+    [data-testid*="stIcon"],
+    [data-testid*="stIcon"] *,
+    header button *,
     .material-symbols-rounded,
     .material-symbols-outlined,
     .material-icons,
-    details summary span[translate="no"] {{
+    details summary span[translate="no"],
+    button[data-testid*="stBaseButton"] [data-testid="stIconMaterial"],
+    [aria-label*="sidebar" i] * {{
         font-family: "Material Symbols Rounded", "Material Symbols Outlined", "Material Icons" !important;
         font-weight: normal !important;
         font-style: normal !important;
         display: inline-block !important;
         line-height: 1 !important;
         white-space: nowrap !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        word-wrap: normal !important;
+        direction: ltr !important;
+        -webkit-font-smoothing: antialiased !important;
     }}
 
     .stApp {{
@@ -252,6 +271,35 @@ def genera_css_accessibilita(settings: dict) -> str:
 
     button[data-baseweb="tab"][aria-selected="true"] * {{
         color: {acc} !important;
+    }}
+
+    /* Barra di Navigazione Sezioni (Pills / Lazy Tabs) */
+    div[data-testid="stButtonGroup"] {{
+        flex-wrap: wrap !important;
+        gap: 6px 8px !important;
+        margin-bottom: 14px !important;
+    }}
+    div[data-testid="stButtonGroup"] button {{
+        border-radius: 20px !important;
+        padding: 6px 14px !important;
+        border: 1px solid {border} !important;
+        background-color: {sec_bg} !important;
+        color: {txt} !important;
+        font-weight: 500 !important;
+        font-size: calc({font_size_val} * 0.94) !important;
+        transition: all 0.15s ease-in-out !important;
+    }}
+    div[data-testid="stButtonGroup"] button:hover {{
+        border-color: {acc} !important;
+    }}
+    div[data-testid="stButtonGroup"] button[aria-pressed="true"] {{
+        background-color: {acc} !important;
+        border-color: {acc} !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }}
+    div[data-testid="stButtonGroup"] button[aria-pressed="true"] * {{
+        color: #ffffff !important;
     }}
 
     /* Pulsanti Primari e Popover */

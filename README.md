@@ -11,14 +11,14 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Release-v2.0.0-brightgreen?style=flat" alt="Release v2.0.0">
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/GUI-Streamlit-FF4B4B?logo=streamlit" alt="Streamlit">
   <img src="https://img.shields.io/badge/AI-Ollama%20%7C%20Gemini%20%7C%20Groq%20%7C%20OpenAI-blueviolet" alt="Dual Engine AI">
-  <img src="https://img.shields.io/badge/Audio-Whisper%20(Local%20%26%20Cloud)-green" alt="Whisper">
+  <img src="https://img.shields.io/badge/Podcast-AntennaPod%20%26%20Voice%20Cloning-orange" alt="Podcast & Voice Cloning">
   <img src="https://img.shields.io/badge/Calendar-Google%20Calendar%20API-4285F4?logo=googlecalendar" alt="Google Calendar API">
   <img src="https://img.shields.io/badge/Accessibility-WCAG%20AAA-yellow" alt="WCAG AAA">
   <img src="https://img.shields.io/badge/License-GNU%20GPLv3-blue" alt="GNU GPLv3">
-  <img src="https://img.shields.io/badge/Mode-Local%20Privacy%20%26%20Cloud%20Ready-brightgreen" alt="Dual Engine Ready">
 </p>
 
 <p align="center">
@@ -122,7 +122,20 @@ Astro_KW MemoBot nasce con una forte vocazione per l'**accessibilità digitale**
   <em>Scheda Agenda & Scadenze con sincronizzazione 1-Click su Google Calendar.</em>
 </p>
 
-* 🗑️ **Cancellazione Massiva Sicura (Bulk Delete):** Toolbar galleggiante con pulsanti "Tutti/Nessuno", contatore dinamico e conferma prima dell'eliminazione.
+* 🎙️ **Studio Podcast Personale & Feed RSS per l'Auto (AntennaPod & Android Auto):**
+  * Trasforma articoli web, documenti PDF o appunti scritti in veri **podcast radiofonici** con introduzione contestuale parlata (*"Oggi è [Data] da [Fonte]..."*).
+  * Server feed RSS locale (`/feed.xml`) integrato: inquadra il **QR Code** con lo smartphone per sincronizzare il tuo canale privato su **AntennaPod** e ascoltare i tuoi articoli preferiti mentre guidi con **Android Auto**!
+* ✨ **Zero-Shot Voice Cloning (Clonazione Vocale) & Sintesi Neurale Ibrida:**
+  * Clona qualsiasi voce reale da brevi campioni audio di 15-30 secondi tramite accelerazione GPU NVIDIA (*Coqui XTTS-v2*), caricabili anche al volo con drag-and-drop dalla dashboard.
+  * Sintesi neurale 100% offline su CPU (*Kokoro ONNX*) e cloud (*Edge-TTS*) con fallback automatico multilivello a prova di errore.
+* 🗂️ **Azioni di Gruppo & Riorganizzazione Massiva (Bulk Actions):** Toolbar interattiva con pulsanti "Tutti/Nessuno", selezione multipla e popover protetti per:
+  * **Cambio Categoria Massivo (`🏷️ Categoria`)**: sposta più memo contemporaneamente in una diversa cartella tematica (*Lavoro, Tecnologia, Spesa, ecc.*).
+  * **Cambio Priorità Massivo (`🎯 Priorità`)**: eleva o riduci in blocco l'urgenza di gruppi di note (*🔴 P1, 🟡 P2, 🟢 P3*).
+  * **Archiviazione & Cestinazione Sicura (`📦 Archivia` / `🗑️ Cestina`)**: con contatori dinamici e conferme di sicurezza.
+* ⚡ **Architettura Ultra-Rapida & Zero Latenza (Lazy Navigation & Modale On-Demand):**
+  * **Lazy Tabs (`st.pills`):** Esegue nel backend solo la scheda attiva, azzerando l'esecuzione simultanea dei 15 tab.
+  * **Finestra Modale On-Demand (`@st.dialog`):** I form di modifica vengono caricati in memoria solo quando si clicca "✏️ Modifica", riducendo i widget attivi da oltre 4.000 a meno di 80-100.
+  * **Paginazione Dinamica & Download MP3:** Selettore per pagina (25 / 50 / Tutti) e pulsante nativo `💾 Scarica MP3` con titoli puliti ed estensione garantita.
 * 📲 **Condivisione Rapida:** Box formattato con Titolo, Riassunto e Fonte con pulsanti di inoltro diretto su WhatsApp e Telegram.
 
 ---
@@ -233,7 +246,13 @@ Per abilitare la sincronizzazione a 1-clic con Google Calendar:
   - **Astro_KW Radar (RAG Avanzato):** Chat locale e cloud con le note, stemming morfologico italiano per plurali/singolari, citazione fonti interattive e consapevolezza della collocazione ("Dove si trova?").
   - **Architettura Multi-Provider Dual-Engine:** Supporto contemporaneo per Ollama locale (100% privacy offline) e Cloud API (Google Gemini gratuito, Groq ultra-veloce, OpenAI, OpenRouter).
   - Widget nella dashboard con test di latenza in 1-clic e configurazione guidata.
-- [ ] **v1.3 (Prossimi Passi):**
+- [x] **v2.0.0 — Major Release: Studio Podcast, Voice Cloning & Architettura Zero-Latenza:**
+  - **🎙️ Studio Podcast & Feed RSS AntennaPod:** Generazione automatica di episodi radiofonici da link web, PDF multipagina o testo libero con intro dinamica e feed RSS locale compatibile con AntennaPod e Android Auto.
+  - **✨ Zero-Shot Voice Cloning & TTS Ibrido:** Sintesi con voci clonate su GPU (*XTTS-v2*), sintesi neurale 100% offline su CPU (*Kokoro ONNX*) e fallback resiliente su *Edge-TTS Cloud*.
+  - **🗂️ Toolbar Azioni di Gruppo (Bulk Actions):** Selezione multipla atomica (*Tutti / Nessuno*), cambio massivo di categoria e priorità, archiviazione e cestinazione cumulativa.
+  - **⚡ Architettura Zero-Latenza (Lazy Navigation & Modale On-Demand):** Navigazione lazy con `st.pills` (esecuzione condizionale single-tab) e finestra modale `@st.dialog` che abbatte il 95% dei widget dal DOM con risposta sub-100ms.
+  - **💾 Download Diretto MP3:** Pulsante nativo per salvare all'istante i file audio sul PC con titolo pulito ed estensione `.mp3`.
+- [ ] **v2.1.0 (Prossimi Passi):**
   - Persistenza chat preferite ⭐ e salvataggio risposte Radar come nuovi memo.
   - Supporto per internazionalizzazione multilingua dell'interfaccia (i18n).
 

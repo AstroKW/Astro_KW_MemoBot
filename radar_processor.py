@@ -3,6 +3,7 @@ import re
 import sqlite3
 from datetime import datetime
 import streamlit as st
+import database
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -364,7 +365,7 @@ def render_fonti_consultate(fonti: list[dict]):
             st.markdown(details_html, unsafe_allow_html=True)
 
 def render_scheda_radar(df_totale=None):
-    """Renderizza l'interfaccia interattiva di Astro_KW Radar all'interno di Streamlit."""
+    """Renderizza l'interfaccia interattiva di Astro_KW Radar all'interno di Streamlit con persistenza SQLite."""
     st.markdown("""
     <div style="padding: 10px 0 15px 0;">
         <h2 style="margin: 0; font-size: 1.8rem; font-weight: 700; color: inherit; display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
@@ -379,32 +380,124 @@ def render_scheda_radar(df_totale=None):
     </div>
     """, unsafe_allow_html=True)
 
-    # Inizializzazione cronologia chat
-    if "radar_chat" not in st.session_state:
-        st.session_state.radar_chat = []
+    # Inizializzazione e recupero sessioni da SQLite
+    sessioni = database.ottieni_sessioni_radar()
+    sess_map = {s['id']: s for s in sessioni}
 
-    # Barra di controllo e filtri rapidi
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        categorie_opzioni = ["Tutte le categorie", "Lavoro", "Sport", "Tempo Libero", "Famiglia/Personale", "Tecnologia", "Cultura/Notizie", "Spesa/Acquisti", "Altro"]
-        filtro_cat = st.selectbox("🎯 Ambito di ricerca:", categorie_opzioni, key="radar_filtro_cat")
-    with col2:
-        st.write("")
-        st.write("")
-        solo_p1 = st.checkbox("🔴 Solo P1 Urgenti", key="radar_solo_p1")
-    with col3:
-        st.write("")
-        st.write("")
-        if st.button("🧹 Nuova Chat", use_container_width=True, help="Cancella la cronologia corrente della conversazione"):
-            st.session_state.radar_chat = []
+    if "radar_active_session_id" not in st.session_state:
+        st.session_state.radar_active_session_id = sessioni[0]['id'] if sessioni else None
+
+    # Se l'ID attivo non esiste più tra le sessioni, resettiamo alla prima disponibile o None
+    if st.session_state.radar_active_session_id not in sess_map:
+        st.session_state.radar_active_session_id = sessioni[0]['id'] if sessioni else None
+
+    active_sess_id = st.session_state.radar_active_session_id
+    active_sess = sess_map.get(active_sess_id)
+
+    # -------------------------------------------------------------
+    # TOOLBAR GESTIONE SESSIONI & PREFERITI
+    # -------------------------------------------------------------
+    st.caption("🗂️ **Gestione Sessioni di Ricerca & Cronologia Radar:**")
+    c_sess, c_new, c_fav, c_ren, c_del, c_clean = st.columns([3.4, 1.2, 1.3, 0.9, 0.9, 1.8], vertical_alignment="center")
+
+    with c_sess:
+        if sessioni:
+            options_ids = [s['id'] for s in sessioni]
+            cur_index = options_ids.index(active_sess_id) if active_sess_id in options_ids else 0
+            def format_sess_label(sid):
+                s = sess_map[sid]
+                icon = "⭐ " if s.get('preferito') else "💬 "
+                tit = s.get('titolo', 'Senza Titolo')
+                if len(tit) > 35:
+                    tit = tit[:35] + "..."
+                dt_str = str(s.get('data_aggiornamento', ''))[:10]
+                return f"{icon}{tit} ({dt_str})"
+
+            selected_sid = st.selectbox(
+                "Sessione Attiva:",
+                options=options_ids,
+                index=cur_index,
+                format_func=format_sess_label,
+                key="select_radar_session",
+                label_visibility="collapsed"
+            )
+            if selected_sid != active_sess_id:
+                st.session_state.radar_active_session_id = selected_sid
+                st.rerun()
+        else:
+            st.caption("*(Nessuna chat salvata — invia una domanda per iniziare)*")
+
+    with c_new:
+        if st.button("➕ Nuova", use_container_width=True, help="Inizia una nuova conversazione"):
+            st.session_state.radar_active_session_id = None
             st.session_state.radar_pending_query = None
             st.rerun()
 
+    with c_fav:
+        if active_sess:
+            is_pref = bool(active_sess.get("preferito", 0))
+            btn_fav_text = "⭐ Fissata" if is_pref else "☆ Preferita"
+            btn_fav_help = "Rimuovi dai preferiti" if is_pref else "Fissa questa sessione nei preferiti (sarà protetta dalla pulizia rapida)"
+            if st.button(btn_fav_text, use_container_width=True, help=btn_fav_help, key="btn_radar_fav_toggle"):
+                database.imposta_preferito_sessione_radar(active_sess_id, not is_pref)
+                st.rerun()
+        else:
+            st.button("☆ Preferita", disabled=True, use_container_width=True, key="btn_radar_fav_dis")
+
+    with c_ren:
+        if active_sess:
+            with st.popover("✏️", use_container_width=True, help="Rinomina questa conversazione"):
+                st.markdown("##### ✏️ Rinomina Conversazione")
+                nuovo_titolo = st.text_input("Titolo:", value=active_sess.get('titolo', ''), key=f"input_ren_{active_sess_id}")
+                if st.button("💾 Salva", type="primary", use_container_width=True, key=f"btn_save_ren_{active_sess_id}"):
+                    if nuovo_titolo.strip():
+                        database.rinomina_sessione_radar(active_sess_id, nuovo_titolo.strip())
+                        st.rerun()
+        else:
+            st.button("✏️", disabled=True, use_container_width=True, key="btn_radar_ren_dis")
+
+    with c_del:
+        if active_sess:
+            with st.popover("🗑️", use_container_width=True, help="Elimina questa conversazione"):
+                st.markdown("##### 🗑️ Elimina Conversazione")
+                st.write(f"Vuoi eliminare definitivamente **'{active_sess.get('titolo')}'**?")
+                st.caption("Tutti i messaggi scambiati in questa sessione verranno cancellati.")
+                if st.button("Sì, Elimina", type="primary", use_container_width=True, key=f"btn_confirm_del_{active_sess_id}"):
+                    database.elimina_sessione_radar(active_sess_id)
+                    st.session_state.radar_active_session_id = None
+                    st.rerun()
+        else:
+            st.button("🗑️", disabled=True, use_container_width=True, key="btn_radar_del_dis")
+
+    with c_clean:
+        with st.popover("🧹 Pulizia", use_container_width=True, help="Pulizia rapida: elimina le chat non preferite"):
+            st.markdown("##### 🧹 Pulizia Intelligente")
+            st.write("Elimina in un colpo solo tutte le conversazioni **NON contrassegnate come preferite (⭐)**.")
+            st.caption("Le conversazioni con la stella ⭐ rimarranno sempre al sicuro.")
+            non_pref_count = len([s for s in sessioni if not s.get('preferito')])
+            if st.button(f"🔥 Elimina {non_pref_count} temporanee", type="primary", disabled=(non_pref_count == 0), use_container_width=True, key="btn_clean_temp_radar"):
+                rimossi = database.svuota_sessioni_non_preferite()
+                st.session_state.radar_active_session_id = None
+                st.success(f"{rimossi} sessioni temporanee rimosse!")
+                st.rerun()
+
+    # Barra di controllo e filtri rapidi
+    col1, col2 = st.columns([2.5, 1.5], vertical_alignment="center")
+    with col1:
+        categorie_opzioni = ["Tutte le categorie", "Lavoro", "Sport", "Tempo Libero", "Famiglia/Personale", "Tecnologia", "Cultura/Notizie", "Spesa/Acquisti", "Altro"]
+        filtro_cat = st.selectbox("🎯 Ambito di ricerca memo:", categorie_opzioni, key="radar_filtro_cat")
+    with col2:
+        st.write("")
+        solo_p1 = st.checkbox("🔴 Solo P1 Urgenti", key="radar_solo_p1")
+
     st.markdown("---")
 
+    # Recupero messaggi della sessione attiva da SQLite
+    messaggi_db = database.ottieni_messaggi_sessione_radar(active_sess_id) if active_sess_id else []
+
     # Se la chat è vuota, mostriamo suggerimenti rapidi
-    if not st.session_state.radar_chat:
-        st.info("💡 **Come posso aiutarti?** Puoi farmi domande libere, ad esempio:")
+    if not messaggi_db:
+        st.info("💡 **Come posso aiutarti?** Puoi iniziare una nuova ricerca o cliccare uno dei suggerimenti rapidi:")
         col_sugg1, col_sugg2, col_sugg3 = st.columns(3)
         with col_sugg1:
             if st.button("🔴 Cosa devo fare di urgente?", use_container_width=True):
@@ -420,11 +513,51 @@ def render_scheda_radar(df_totale=None):
                 st.rerun()
 
     # Visualizzazione della cronologia dei messaggi
-    for msg in st.session_state.radar_chat:
-        with st.chat_message(msg["role"], avatar="🚀" if msg["role"] == "assistant" else None):
-            st.markdown(msg["content"])
-            if msg.get("fonti"):
-                render_fonti_consultate(msg["fonti"])
+    for m in messaggi_db:
+        ruolo = m.get("ruolo", "user")
+        contenuto = m.get("contenuto", "")
+        fonti = m.get("fonti", [])
+        msg_id = m.get("id")
+
+        with st.chat_message(ruolo, avatar="🚀" if ruolo == "assistant" else None):
+            st.markdown(contenuto)
+            if fonti:
+                render_fonti_consultate(fonti)
+
+            # Pulsante 'Salva come nuovo Memo' sotto le risposte dell'assistente
+            if ruolo == "assistant":
+                c_btn_save, _ = st.columns([2.5, 7.5])
+                with c_btn_save:
+                    with st.popover("💾 Salva come nuovo Memo", use_container_width=True):
+                        st.markdown("##### 💾 Salva Risposta nell'Archivio")
+                        st.caption("Crea un nuovo memo contenente questa sintesi generata da Radar:")
+                        
+                        prime_parole = contenuto.split("\n")[0].replace("#", "").replace("*", "").strip()
+                        default_titolo = prime_parole[:50] if prime_parole else "Sintesi da Astro_KW Radar"
+                        
+                        memo_tit = st.text_input("Titolo Memo:", value=default_titolo, key=f"memo_tit_{msg_id}")
+                        cat_default_idx = database.CATEGORIE_STANDARD.index(filtro_cat) if filtro_cat in database.CATEGORIE_STANDARD else database.CATEGORIE_STANDARD.index("Altro")
+                        memo_cat = st.selectbox("Categoria:", database.CATEGORIE_STANDARD, index=cat_default_idx, key=f"memo_cat_{msg_id}")
+                        
+                        mappa_prio = {"🔴 P1 - Alta / Urgente": 1, "🟡 P2 - Media": 2, "🟢 P3 - Normale": 3}
+                        memo_prio_str = st.selectbox("Priorità:", list(mappa_prio.keys()), index=2, key=f"memo_prio_{msg_id}")
+                        memo_prio = mappa_prio[memo_prio_str]
+                        
+                        memo_tags = st.text_input("Tag (separati da virgola):", value="radar, sintesi", key=f"memo_tags_{msg_id}")
+                        
+                        if st.button("Salva nel Database", type="primary", use_container_width=True, key=f"btn_confirm_memo_{msg_id}"):
+                            new_id = database.inserisci_memo(
+                                tipo_contenuto="testo",
+                                titolo=memo_tit.strip() or default_titolo,
+                                riassunto=contenuto[:200] + ("..." if len(contenuto) > 200 else ""),
+                                testo_originale=contenuto,
+                                categoria=memo_cat,
+                                priorita=memo_prio,
+                                tags=memo_tags
+                            )
+                            if new_id:
+                                st.success(f"✅ Creato Memo #{new_id} con successo!")
+                                st.rerun()
 
     # Gestione invio nuova domanda (tramite chat_input o click su suggerimento)
     query_da_inviare = None
@@ -437,8 +570,16 @@ def render_scheda_radar(df_totale=None):
             query_da_inviare = chat_input_val
 
     if query_da_inviare:
-        # Aggiunta messaggio utente
-        st.session_state.radar_chat.append({"role": "user", "content": query_da_inviare})
+        # Se non c'è una sessione attiva, la creiamo con titolo derivato dalla domanda
+        if not active_sess_id:
+            tit_nuova = query_da_inviare[:45].strip()
+            if len(query_da_inviare) > 45:
+                tit_nuova += "..."
+            active_sess_id = database.crea_sessione_radar(tit_nuova)
+            st.session_state.radar_active_session_id = active_sess_id
+
+        # Salvataggio messaggio utente su SQLite
+        database.salva_messaggio_radar(active_sess_id, "user", query_da_inviare)
         with st.chat_message("user"):
             st.markdown(query_da_inviare)
 
@@ -448,17 +589,17 @@ def render_scheda_radar(df_totale=None):
         if solo_p1:
             memo_trovati = [m for m in memo_trovati if m.get('priorita') == 1]
 
+        # Costruzione contesto cronologico per il modello
+        chat_context = [{"role": m.get("ruolo", "user"), "content": m.get("contenuto", "")} for m in messaggi_db]
+        chat_context.append({"role": "user", "content": query_da_inviare})
+
         # Generazione risposta in streaming
         with st.chat_message("assistant", avatar="🚀"):
-            stream_gen = stream_risposta_radar(st.session_state.radar_chat, memo_trovati)
+            stream_gen = stream_risposta_radar(chat_context, memo_trovati)
             risposta_completa = st.write_stream(stream_gen)
             if memo_trovati:
                 render_fonti_consultate(memo_trovati)
 
-        # Salvataggio risposta assistente con relative fonti
-        st.session_state.radar_chat.append({
-            "role": "assistant",
-            "content": risposta_completa,
-            "fonti": memo_trovati
-        })
+        # Salvataggio risposta assistente con relative fonti nel database
+        database.salva_messaggio_radar(active_sess_id, "assistant", risposta_completa, memo_trovati)
         st.rerun()

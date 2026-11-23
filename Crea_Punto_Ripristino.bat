@@ -13,11 +13,16 @@ set "BACKUP_DIR=backups\checkpoint_%TIMESTAMP%"
 
 echo 1. Creazione backup fisico in %BACKUP_DIR%...
 mkdir "%BACKUP_DIR%" 2>nul
+mkdir "%BACKUP_DIR%\voci" 2>nul
+mkdir "%BACKUP_DIR%\worker_tts" 2>nul
 copy *.py "%BACKUP_DIR%\" >nul
 copy *.bat "%BACKUP_DIR%\" >nul
 copy *.txt "%BACKUP_DIR%\" >nul
+copy *.md "%BACKUP_DIR%\" >nul
 copy *.db "%BACKUP_DIR%\" >nul
 copy .env.example "%BACKUP_DIR%\" >nul
+copy voci\* "%BACKUP_DIR%\voci\" >nul
+copy worker_tts\*.py "%BACKUP_DIR%\worker_tts\" >nul
 
 echo 2. Creazione snapshot Git locale...
 git add .

@@ -1,4 +1,6 @@
+import os
 import re
+import subprocess
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -12,6 +14,54 @@ DEFAULT_HEADERS = {
 }
 
 TIMEOUT_SECONDS = 7
+
+BROWSER_CANDIDATES = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+]
+
+def scarica_html_con_browser(url: str, timeout_sec: int = 15) -> str:
+    """
+    Scarica l'HTML renderizzato della pagina invocando un browser Chromium nativo
+    (Chrome o Edge) in modalità headless con dump del DOM.
+    Bypassa elegantemente WAF e protezioni antibot (Akamai EdgeSuite, Cloudflare, ecc.)
+    che bloccano le librerie HTTP standard di Python.
+    """
+    browser_exe = None
+    for p in BROWSER_CANDIDATES:
+        if os.path.exists(p):
+            browser_exe = p
+            break
+
+    if not browser_exe:
+        return ""
+
+    cmd = [
+        browser_exe,
+        "--headless=new",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "--dump-dom",
+        url
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=timeout_sec
+        )
+        html = proc.stdout.strip() if proc.stdout else ""
+        if html and len(html) > 500 and "<title>Access Denied</title>" not in html and "Reference #" not in html:
+            return html
+    except Exception as e:
+        print(f"[SCRAPER] Avviso esecuzione browser headless: {e}")
+    return ""
 
 def _pulisci_testo(testo: str) -> str:
     """Rimuove spazi multipli e ritorni a capo ridondanti."""
@@ -89,10 +139,11 @@ def estrai_info_instagram(url: str, testo_utente: str = "") -> dict:
 
 def estrai_articolo_generico(url: str) -> dict:
     """Estrae titolo, meta-descrizione e paragrafi dell'articolo da qualsiasi sito web."""
+    html_text = ""
     try:
         resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=TIMEOUT_SECONDS)
         
-        # Gestione pagine non trovate o errori HTTP
+        # Gestione pagine non trovate o errori HTTP 404
         if resp.status_code == 404:
             return {
                 "titolo": "Pagina non trovata (Errore 404)",
@@ -102,10 +153,28 @@ def estrai_articolo_generico(url: str) -> dict:
                 "successo": False
             }
         
+        # Se riceve 403 o la risposta contiene blocco WAF (es. Akamai / Cloudflare), attiva il fallback browser
+        if resp.status_code == 403 or "<title>Access Denied</title>" in resp.text or "Reference #" in resp.text:
+            raise requests.exceptions.HTTPError(f"Rilevato blocco WAF (status {resp.status_code})")
+
         resp.raise_for_status()
-        
+        html_text = resp.text
+    except Exception as e_req:
+        print(f"[SCRAPER] Richiesta HTTP standard non riuscita o protetta da WAF ({e_req}). Avvio fallback browser nativo headless...")
+        html_text = scarica_html_con_browser(url)
+
+    if not html_text:
+        return {
+            "titolo": "Articolo Web",
+            "descrizione": "",
+            "testo_articolo": f"Link: {url}",
+            "fonte": urllib.parse.urlparse(url).netloc,
+            "successo": False
+        }
+
+    try:
         # Parsing con BeautifulSoup
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html_text, "html.parser")
         
         # 1. Rimuovi elementi non testuali / rumorosi
         for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form", "noscript", "svg"]):
@@ -161,18 +230,8 @@ def estrai_articolo_generico(url: str) -> dict:
             "fonte": fonte,
             "successo": bool(titolo or testo_corpo)
         }
-        
-    except requests.exceptions.Timeout:
-        print(f"[SCRAPER] Timeout durante il caricamento di {url}")
-        return {
-            "titolo": "Articolo Web (Timeout caricamento)",
-            "descrizione": "",
-            "testo_articolo": f"Link: {url}\nImpossibile recuperare il contenuto entro {TIMEOUT_SECONDS} secondi.",
-            "fonte": urllib.parse.urlparse(url).netloc,
-            "successo": False
-        }
     except Exception as e:
-        print(f"[SCRAPER] Errore estrazione link generico: {e}")
+        print(f"[SCRAPER] Errore parsing HTML articolo: {e}")
         return {
             "titolo": "Articolo Web",
             "descrizione": "",

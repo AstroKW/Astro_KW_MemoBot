@@ -1,7 +1,18 @@
+import os
 import sqlite3
 from datetime import datetime
 
 DB_NAME = "memobot.db"
+ALLEGATI_DIR = "allegati"
+
+def _rimuovi_file_allegato(percorso: str | None):
+    """Rimuove fisicamente dal disco il file allegato se esiste."""
+    if percorso and os.path.exists(percorso):
+        try:
+            os.remove(percorso)
+            print(f"[ALLEGATI] Rimosso file allegato dal disco: {percorso}")
+        except Exception as e:
+            print(f"[ALLEGATI] Impossibile eliminare il file {percorso}: {e}")
 
 CATEGORIE_STANDARD = [
     "Lavoro",
@@ -40,7 +51,8 @@ def init_db():
             data_creazione DATETIME DEFAULT CURRENT_TIMESTAMP,
             data_promemoria DATETIME,      -- per le notifiche agenda
             stato_notificato INTEGER DEFAULT 0, -- 0: da notificare, 1: notificato
-            telegram_message_id INTEGER    -- ID messaggio Telegram originale
+            telegram_message_id INTEGER,   -- ID messaggio Telegram originale
+            allegato_path TEXT             -- Percorso locale relativo del file immagine allegato
         )
     ''')
     
@@ -72,6 +84,26 @@ def init_db():
         print("[DATABASE] Migrazione: aggiunta colonna 'cestinato'...")
         cursor.execute("ALTER TABLE memo ADD COLUMN cestinato INTEGER DEFAULT 0")
 
+    if "allegato_path" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'allegato_path'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN allegato_path TEXT")
+
+    if "audio_podcast_path" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'audio_podcast_path'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN audio_podcast_path TEXT")
+
+    if "podcast_incluso" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'podcast_incluso'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN podcast_incluso INTEGER DEFAULT 0")
+
+    if "podcast_durata" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'podcast_durata'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN podcast_durata INTEGER DEFAULT 0")
+
+    if "podcast_intro" not in colonne:
+        print("[DATABASE] Migrazione: aggiunta colonna 'podcast_intro'...")
+        cursor.execute("ALTER TABLE memo ADD COLUMN podcast_intro TEXT")
+
     # Indici rapidi per performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_tg_id ON memo(telegram_message_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_priorita ON memo(priorita)')
@@ -79,6 +111,35 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_gcal ON memo(google_event_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_archiviato ON memo(archiviato)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_cestinato ON memo(cestinato)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_memo_podcast ON memo(podcast_incluso)')
+
+    # Tabella sessioni Astro_KW Radar (Chat RAG persistente)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS radar_sessioni (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titolo TEXT NOT NULL,
+            preferito INTEGER DEFAULT 0,
+            data_creazione DATETIME DEFAULT CURRENT_TIMESTAMP,
+            data_aggiornamento DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Tabella messaggi per sessione Radar
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS radar_messaggi (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessione_id INTEGER NOT NULL,
+            ruolo TEXT NOT NULL,
+            contenuto TEXT NOT NULL,
+            fonti_json TEXT,
+            data_invio DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sessione_id) REFERENCES radar_sessioni(id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_radar_msg_sess ON radar_messaggi(sessione_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_radar_sess_pref ON radar_sessioni(preferito)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_radar_sess_data ON radar_sessioni(data_aggiornamento)')
     
     conn.commit()
     conn.close()
@@ -110,35 +171,96 @@ def trova_memo_per_telegram_id(tg_message_id: int):
     return dict(row) if row else None
 
 def elimina_memo(memo_id: int) -> bool:
-    """Elimina un memo dal database per ID."""
+    """Elimina definitivamente un memo dal database e rimuove eventuali allegati e podcast dal disco."""
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
+        
+        # Recupera percorso dell'allegato e del podcast se presenti
+        cursor.execute("SELECT allegato_path, audio_podcast_path FROM memo WHERE id = ?", (memo_id,))
+        row = cursor.fetchone()
+        allegato_path = row[0] if (row and row[0]) else None
+        podcast_path = row[1] if (row and row[1]) else None
+
         cursor.execute("DELETE FROM memo WHERE id = ?", (memo_id,))
         conn.commit()
         eliminato = cursor.rowcount > 0
         conn.close()
+
+        if eliminato:
+            if allegato_path:
+                _rimuovi_file_allegato(allegato_path)
+            if podcast_path:
+                _rimuovi_file_allegato(podcast_path)
+
         return eliminato
     except Exception as e:
         print(f"[DATABASE] Errore eliminazione memo #{memo_id}: {e}")
         return False
 
 def elimina_memo_multipli(memo_ids: list[int]) -> int:
-    """Elimina una lista di memo dal database per ID e restituisce il numero di elementi cancellati."""
+    """Elimina definitivamente una lista di memo dal database e rimuove i relativi file allegati e podcast dal disco."""
     if not memo_ids:
         return 0
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         placeholders = ",".join("?" for _ in memo_ids)
+
+        # Recupera percorsi degli allegati e podcast
+        cursor.execute(f"SELECT allegato_path, audio_podcast_path FROM memo WHERE id IN ({placeholders})", tuple(memo_ids))
+        file_da_rimuovere = []
+        for r in cursor.fetchall():
+            if r[0]: file_da_rimuovere.append(r[0])
+            if r[1]: file_da_rimuovere.append(r[1])
+
         cursor.execute(f"DELETE FROM memo WHERE id IN ({placeholders})", tuple(memo_ids))
         conn.commit()
         cancellati = cursor.rowcount
         conn.close()
+
+        for a_path in file_da_rimuovere:
+            _rimuovi_file_allegato(a_path)
+
         return cancellati
     except Exception as e:
         print(f"[DATABASE] Errore eliminazione multipla memo: {e}")
         return 0
+
+def imposta_allegato(memo_id: int, allegato_path: str) -> bool:
+    """Associa un file allegato a un memo."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE memo SET allegato_path = ? WHERE id = ?", (allegato_path, memo_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore associazione allegato a memo #{memo_id}: {e}")
+        return False
+
+def rimuovi_allegato(memo_id: int) -> bool:
+    """Rimuove l'allegato associato a un memo sia dal database che dal disco."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT allegato_path FROM memo WHERE id = ?", (memo_id,))
+        row = cursor.fetchone()
+        allegato_path = row[0] if (row and row[0]) else None
+
+        cursor.execute("UPDATE memo SET allegato_path = NULL WHERE id = ?", (memo_id,))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+
+        if ok and allegato_path:
+            _rimuovi_file_allegato(allegato_path)
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore rimozione allegato da memo #{memo_id}: {e}")
+        return False
 
 def modifica_memo(memo_id: int, titolo: str, riassunto: str, testo_originale: str, categoria: str, priorita: int, tags: str) -> bool:
     """Aggiorna i campi di un memo esistente."""
@@ -156,6 +278,73 @@ def modifica_memo(memo_id: int, titolo: str, riassunto: str, testo_originale: st
         return modificato
     except Exception as e:
         print(f"[DATABASE] Errore modifica memo #{memo_id}: {e}")
+        return False
+
+def cambia_categoria_multipli(memo_ids: list[int], nuova_categoria: str) -> int:
+    """Modifica la categoria di più memo contemporaneamente."""
+    if not memo_ids or not nuova_categoria:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        cursor.execute(f'''
+            UPDATE memo
+            SET categoria = ?
+            WHERE id IN ({placeholders})
+        ''', [nuova_categoria] + memo_ids)
+        conn.commit()
+        modificati = cursor.rowcount
+        conn.close()
+        return modificati
+    except Exception as e:
+        print(f"[DATABASE] Errore cambio categoria multipli: {e}")
+        return 0
+
+def cambia_priorita_multipli(memo_ids: list[int], nuova_priorita: int) -> int:
+    """Modifica la priorità (1: Alta, 2: Media, 3: Normale) di più memo contemporaneamente."""
+    if not memo_ids or nuova_priorita not in [1, 2, 3]:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        cursor.execute(f'''
+            UPDATE memo
+            SET priorita = ?
+            WHERE id IN ({placeholders})
+        ''', [nuova_priorita] + memo_ids)
+        conn.commit()
+        modificati = cursor.rowcount
+        conn.close()
+        return modificati
+    except Exception as e:
+        print(f"[DATABASE] Errore cambio priorità multipli: {e}")
+        return 0
+
+def aggiorna_dettagli_articolo_memo(memo_id: int, titolo: str, riassunto: str = None) -> bool:
+    """Aggiorna titolo ed eventuale riassunto del memo se prima non erano disponibili (es. dopo estrazione da link protetto)."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        if riassunto:
+            cursor.execute('''
+                UPDATE memo
+                SET titolo = ?, riassunto = ?
+                WHERE id = ?
+            ''', (titolo, riassunto, memo_id))
+        else:
+            cursor.execute('''
+                UPDATE memo
+                SET titolo = ?
+                WHERE id = ?
+            ''', (titolo, memo_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore aggiornamento dettagli memo #{memo_id}: {e}")
         return False
 
 def imposta_stato_archiviato(memo_id: int, archiviato: bool = True) -> bool:
@@ -254,18 +443,345 @@ def ripristina_dal_cestino_multipli(memo_ids: list[int]) -> int:
         return 0
 
 def svuota_cestino() -> int:
-    """Elimina definitivamente tutti i memo attualmente nel cestino."""
+    """Elimina definitivamente tutti i memo attualmente nel cestino e rimuove i relativi file allegati dal disco."""
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
+
+        # Recupera tutti i file allegati e podcast dei memo cestinati
+        cursor.execute("SELECT allegato_path, audio_podcast_path FROM memo WHERE cestinato = 1")
+        file_da_rimuovere = []
+        for r in cursor.fetchall():
+            if r[0]: file_da_rimuovere.append(r[0])
+            if r[1]: file_da_rimuovere.append(r[1])
+
         cursor.execute("DELETE FROM memo WHERE cestinato = 1")
         conn.commit()
         eliminati = cursor.rowcount
         conn.close()
+
+        for a_path in file_da_rimuovere:
+            _rimuovi_file_allegato(a_path)
+
         return eliminati
     except Exception as e:
         print(f"[DATABASE] Errore svuotamento cestino: {e}")
         return 0
+
+# ==============================================================================
+# GESTIONE PODCAST & AUDIOBOOK (MEMOBOT PODCAST)
+# ==============================================================================
+
+def imposta_podcast_memo(memo_id: int, audio_path: str, durata: int, intro: str = "", incluso: int = 1) -> bool:
+    """Associa un file podcast audio MP3 a un memo."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE memo
+            SET audio_podcast_path = ?, podcast_durata = ?, podcast_intro = ?, podcast_incluso = ?
+            WHERE id = ?
+        ''', (audio_path, durata, intro, incluso, memo_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore salvataggio podcast per memo #{memo_id}: {e}")
+        return False
+
+def rimuovi_podcast_memo(memo_id: int) -> bool:
+    """Rimuove l'audio podcast dal memo e cancella il file MP3 da disco."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT audio_podcast_path FROM memo WHERE id = ?", (memo_id,))
+        row = cursor.fetchone()
+        podcast_path = row[0] if (row and row[0]) else None
+
+        cursor.execute('''
+            UPDATE memo
+            SET audio_podcast_path = NULL, podcast_durata = 0, podcast_intro = NULL, podcast_incluso = 0
+            WHERE id = ?
+        ''', (memo_id,))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+
+        if ok and podcast_path:
+            _rimuovi_file_allegato(podcast_path)
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore rimozione podcast memo #{memo_id}: {e}")
+        return False
+
+def rimuovi_podcast_multipli(memo_ids: list[int]) -> int:
+    """Rimuove l'audio podcast da più memo contemporaneamente e cancella i file MP3 dal disco."""
+    if not memo_ids:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        
+        # 1. Recupera i file audio da cancellare dal disco
+        cursor.execute(f"SELECT audio_podcast_path FROM memo WHERE id IN ({placeholders}) AND audio_podcast_path IS NOT NULL", memo_ids)
+        file_audio = [r[0] for r in cursor.fetchall() if r[0]]
+        
+        # 2. Azzera le colonne podcast nel DB
+        cursor.execute(f'''
+            UPDATE memo
+            SET audio_podcast_path = NULL, podcast_durata = 0, podcast_intro = NULL, podcast_incluso = 0
+            WHERE id IN ({placeholders})
+        ''', memo_ids)
+        conn.commit()
+        modificati = cursor.rowcount
+        conn.close()
+        
+        # 3. Elimina fisicamente i file audio MP3 dal disco
+        for a_path in file_audio:
+            _rimuovi_file_allegato(a_path)
+            
+        return modificati
+    except Exception as e:
+        print(f"[DATABASE] Errore rimozione podcast multipli: {e}")
+        return 0
+
+def cambia_inclusione_podcast(memo_id: int, incluso: bool) -> bool:
+    """Abilita o disabilita l'inclusione di un episodio nel feed RSS del podcast."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        val = 1 if incluso else 0
+        cursor.execute("UPDATE memo SET podcast_incluso = ? WHERE id = ?", (val, memo_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[DATABASE] Errore toggle inclusione feed memo #{memo_id}: {e}")
+        return False
+
+def cambia_inclusione_podcast_multipli(memo_ids: list[int], incluso: bool) -> int:
+    """Modifica lo stato di inclusione nel feed RSS per più episodi contemporaneamente."""
+    if not memo_ids:
+        return 0
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in memo_ids)
+        val = 1 if incluso else 0
+        cursor.execute(f'''
+            UPDATE memo
+            SET podcast_incluso = ?
+            WHERE id IN ({placeholders})
+        ''', [val] + memo_ids)
+        conn.commit()
+        modificati = cursor.rowcount
+        conn.close()
+        return modificati
+    except Exception as e:
+        print(f"[DATABASE] Errore toggle inclusione podcast multipli: {e}")
+        return 0
+
+def ottieni_memo_podcast(solo_inclusi: bool = True) -> list[dict]:
+    """Recupera tutti i memo che hanno una traccia audio podcast generata."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if solo_inclusi:
+            cursor.execute('''
+                SELECT * FROM memo 
+                WHERE audio_podcast_path IS NOT NULL AND audio_podcast_path != '' 
+                  AND podcast_incluso = 1 AND cestinato = 0
+                ORDER BY data_creazione DESC
+            ''')
+        else:
+            cursor.execute('''
+                SELECT * FROM memo 
+                WHERE audio_podcast_path IS NOT NULL AND audio_podcast_path != '' 
+                  AND cestinato = 0
+                ORDER BY data_creazione DESC
+            ''')
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[DATABASE] Errore recupero memo podcast: {e}")
+        return []
+
+def inserisci_memo(tipo_contenuto: str, titolo: str, riassunto: str, testo_originale: str, categoria: str = "Altro", priorita: int = 3, tags: str = "", link_originale: str = "", data_promemoria: str = None, allegato_path: str = None) -> int:
+    """Inserisce un nuovo memo nel database SQLite e restituisce il suo ID."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO memo (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags, categoria, priorita, data_promemoria, allegato_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (tipo_contenuto, titolo, riassunto, testo_originale, link_originale, tags, categoria, priorita, data_promemoria, allegato_path))
+        conn.commit()
+        memo_id = cursor.lastrowid
+        conn.close()
+        print(f"[DATABASE] Nuovo memo creato con successo: #{memo_id} - '{titolo}'")
+        return memo_id
+    except Exception as e:
+        print(f"[DATABASE] Errore inserimento nuovo memo: {e}")
+        return 0
+
+# ==============================================================================
+# GESTIONE SESSIONI & CRONOLOGIA ASTRO_KW RADAR (CHAT RAG)
+# ==============================================================================
+
+def crea_sessione_radar(titolo: str = "Nuova Ricerca") -> int:
+    """Crea una nuova sessione di chat Radar e restituisce il suo ID."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO radar_sessioni (titolo) VALUES (?)", (titolo,))
+        conn.commit()
+        sess_id = cursor.lastrowid
+        conn.close()
+        return sess_id
+    except Exception as e:
+        print(f"[RADAR] Errore creazione sessione: {e}")
+        return 0
+
+def ottieni_sessioni_radar() -> list[dict]:
+    """Recupera tutte le sessioni Radar ordinate per preferiti (in cima) e recency."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM radar_sessioni ORDER BY preferito DESC, data_aggiornamento DESC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[RADAR] Errore recupero sessioni: {e}")
+        return []
+
+def ottieni_sessione_radar(sessione_id: int) -> dict | None:
+    """Recupera i dettagli di una singola sessione Radar."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM radar_sessioni WHERE id = ?", (sessione_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"[RADAR] Errore recupero sessione #{sessione_id}: {e}")
+        return None
+
+def rinomina_sessione_radar(sessione_id: int, nuovo_titolo: str) -> bool:
+    """Rinomina una sessione Radar."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE radar_sessioni SET titolo = ?, data_aggiornamento = CURRENT_TIMESTAMP WHERE id = ?", (nuovo_titolo, sessione_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[RADAR] Errore rinomina sessione #{sessione_id}: {e}")
+        return False
+
+def imposta_preferito_sessione_radar(sessione_id: int, preferito: bool) -> bool:
+    """Imposta o rimuove lo stato preferito (stella ⭐) di una sessione."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        val = 1 if preferito else 0
+        cursor.execute("UPDATE radar_sessioni SET preferito = ?, data_aggiornamento = CURRENT_TIMESTAMP WHERE id = ?", (val, sessione_id))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[RADAR] Errore cambio stato preferito sessione #{sessione_id}: {e}")
+        return False
+
+def elimina_sessione_radar(sessione_id: int) -> bool:
+    """Elimina definitivamente una sessione Radar e tutti i suoi messaggi."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM radar_messaggi WHERE sessione_id = ?", (sessione_id,))
+        cursor.execute("DELETE FROM radar_sessioni WHERE id = ?", (sessione_id,))
+        conn.commit()
+        ok = cursor.rowcount > 0
+        conn.close()
+        return ok
+    except Exception as e:
+        print(f"[RADAR] Errore eliminazione sessione #{sessione_id}: {e}")
+        return False
+
+def svuota_sessioni_non_preferite() -> int:
+    """Elimina in blocco tutte le sessioni NON contrassegnate come preferite (⭐)."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM radar_sessioni WHERE preferito = 0")
+        ids = [r[0] for r in cursor.fetchall()]
+        if not ids:
+            conn.close()
+            return 0
+        
+        placeholders = ",".join("?" for _ in ids)
+        cursor.execute(f"DELETE FROM radar_messaggi WHERE sessione_id IN ({placeholders})", tuple(ids))
+        cursor.execute(f"DELETE FROM radar_sessioni WHERE id IN ({placeholders})", tuple(ids))
+        conn.commit()
+        cancellate = cursor.rowcount
+        conn.close()
+        return cancellate
+    except Exception as e:
+        print(f"[RADAR] Errore pulizia sessioni non preferite: {e}")
+        return 0
+
+def salva_messaggio_radar(sessione_id: int, ruolo: str, contenuto: str, fonti: list | None = None) -> int:
+    """Salva un messaggio nella sessione Radar e aggiorna il timestamp della sessione."""
+    import json
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        fonti_json = json.dumps(fonti, ensure_ascii=False) if fonti else None
+        cursor.execute('''
+            INSERT INTO radar_messaggi (sessione_id, ruolo, contenuto, fonti_json)
+            VALUES (?, ?, ?, ?)
+        ''', (sessione_id, ruolo, contenuto, fonti_json))
+        msg_id = cursor.lastrowid
+        cursor.execute("UPDATE radar_sessioni SET data_aggiornamento = CURRENT_TIMESTAMP WHERE id = ?", (sessione_id,))
+        conn.commit()
+        conn.close()
+        return msg_id
+    except Exception as e:
+        print(f"[RADAR] Errore salvataggio messaggio sessione #{sessione_id}: {e}")
+        return 0
+
+def ottieni_messaggi_sessione_radar(sessione_id: int) -> list[dict]:
+    """Recupera la cronologia dei messaggi di una sessione Radar con fonti deserializzate."""
+    import json
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM radar_messaggi WHERE sessione_id = ? ORDER BY id ASC", (sessione_id,))
+        rows = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            f_json = d.get("fonti_json")
+            if f_json:
+                try:
+                    d["fonti"] = json.loads(f_json)
+                except Exception:
+                    d["fonti"] = []
+            else:
+                d["fonti"] = []
+            rows.append(d)
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[RADAR] Errore recupero messaggi sessione #{sessione_id}: {e}")
+        return []
 
 if __name__ == "__main__":
     init_db()
