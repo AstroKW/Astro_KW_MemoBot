@@ -251,7 +251,7 @@ def estrai_articolo_pulito(url: str) -> dict:
             except Exception:
                 downloaded = ""
             
-        # 3. Fallback con browser nativo Chromium headless per siti con protezioni avanzate (es. Fanpage su Akamai)
+        # 3. Fallback con browser nativo Chromium headless per siti con protezioni avanzate (es. WAF Akamai/Cloudflare)
         if not downloaded or len(downloaded) < 500:
             print(f"[PODCAST_SCRAPER] 🛡️ Pagina protetta da WAF o non scaricabile via HTTP standard. Avvio fallback browser headless per: {url}...")
             downloaded = web_scraper.scarica_html_con_browser(url)
@@ -278,7 +278,7 @@ def estrai_articolo_pulito(url: str) -> dict:
         elif soup.title and soup.title.string:
             titolo = soup.title.string.strip()
             
-        # Pulisci eventuale brand name nel titolo (es. "Notizia - Dagospia")
+        # Pulisci eventuale brand name nel titolo (es. "Notizia - NomeTestata")
         if " - " in titolo:
             parti = titolo.rsplit(" - ", 1)
             if len(parti[0]) > 15:
@@ -347,11 +347,11 @@ def rimuovi_titolo_da_inizio_testo(testo: str, titolo: str) -> str:
     primo = paragrafi[0].strip()
     primo_norm = re.sub(r'[^\w\s]', '', primo.lower()).strip()
 
-    # Se il primo paragrafo è esattamente il titolo (o quasi identico, es. Fanpage)
+    # Se il primo paragrafo è esattamente il titolo (o quasi identico, comune nei portali di news)
     if primo_norm == titolo_norm or (primo_norm.startswith(titolo_norm) and len(primo_norm) <= len(titolo_norm) + 15):
         return '\n\n'.join(paragrafi[1:]).strip()
 
-    # Se il primo paragrafo inizia con il titolo ed è seguito da un separatore (es. Dagospia: TITOLO – Sommario)
+    # Se il primo paragrafo inizia con il titolo ed è seguito da un separatore (es. "TITOLO – Sommario")
     for sep in [' – ', ' - ', ' — ', ' : ', ' | ']:
         if sep in primo:
             parti = primo.split(sep, 1)

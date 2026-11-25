@@ -123,8 +123,21 @@ Astro_KW MemoBot nasce con una forte vocazione per l'**accessibilità digitale**
 </p>
 
 * 🎙️ **Studio Podcast Personale & Feed RSS per l'Auto (AntennaPod & Android Auto):**
-  * Trasforma articoli web, documenti PDF o appunti scritti in veri **podcast radiofonici** con introduzione contestuale parlata (*"Oggi è [Data] da [Fonte]..."*).
+  * Trasforma articoli web, documenti PDF, screenshot da appunti (`Win+Shift+S` / `Ctrl+V`) o appunti scritti in veri **podcast radiofonici** con introduzione contestuale parlata (*"Oggi è [Data] da [Fonte]..."*).
+  * **Generazione Asincrona in Background:** La sintesi audio gira su un thread dedicato con coda sicura; puoi continuare a navigare, leggere e modificare gli altri memo nella stessa finestra senza interrompere la creazione dell'episodio.
   * Server feed RSS locale (`/feed.xml`) integrato: inquadra il **QR Code** con lo smartphone per sincronizzare il tuo canale privato su **AntennaPod** e ascoltare i tuoi articoli preferiti mentre guidi con **Android Auto**!
+
+<p align="center">
+  <img src="docs/assets/podcast_antennapod.png" alt="Studio Podcast, navigazione a pillole e connessione AntennaPod con QR Code" width="850" style="border-radius: 8px;">
+  <br>
+  <em>Nuova barra di navigazione lazy a pillole e Studio Podcast con QR Code per AntennaPod e Android Auto.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/podcast_creator.png" alt="Creazione Podcast da Testo, PDF o Screenshot da Appunti" width="850" style="border-radius: 8px;">
+  <br>
+  <em>Creazione podcast da testo libero, PDF multipagina o screenshot incollati al volo (Win+Shift+S / Ctrl+V) con pulizia automatica di paragrafi e citazioni.</em>
+</p>
 * ✨ **Zero-Shot Voice Cloning (Clonazione Vocale) & Sintesi Neurale Ibrida:**
   * Clona qualsiasi voce reale da brevi campioni audio di 15-30 secondi tramite accelerazione GPU NVIDIA (*Coqui XTTS-v2*), caricabili anche al volo con drag-and-drop dalla dashboard.
   * Sintesi neurale 100% offline su CPU (*Kokoro ONNX*) e cloud (*Edge-TTS*) con fallback automatico multilivello a prova di errore.

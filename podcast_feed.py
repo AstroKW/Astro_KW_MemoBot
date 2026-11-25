@@ -266,6 +266,319 @@ def avvia_server_podcast_background(porta: int = FEED_PORT):
 
     return f"http://{ottieni_ip_locale()}:{porta}/feed.xml"
 
+# ==============================================================================
+# GESTORE ASINCRONO IN BACKGROUND PER SINTESI PODCAST (NON BLOCCANTE)
+# ==============================================================================
+_JOBS_LOCK = threading.Lock()
+_TTS_EXECUTION_LOCK = threading.Lock()
+_PODCAST_JOBS: dict[str, dict] = {}
+
+
+def _aggiorna_job(job_id: str, **campi):
+    with _JOBS_LOCK:
+        if job_id in _PODCAST_JOBS:
+            _PODCAST_JOBS[job_id].update(campi)
+
+
+def ottieni_stato_job_podcast() -> list[dict]:
+    """Restituisce una copia ordinata (più recenti prima) dei job di sintesi podcast."""
+    with _JOBS_LOCK:
+        jobs = [dict(j) for j in _PODCAST_JOBS.values()]
+    jobs.sort(key=lambda x: x.get("ord", 0), reverse=True)
+    return jobs
+
+
+def is_memo_in_generazione(memo_id: int) -> bool:
+    """Restituisce True se esiste già un job attivo in background per il memo indicato."""
+    with _JOBS_LOCK:
+        for j in _PODCAST_JOBS.values():
+            if j.get("stato") == "in_corso" and j.get("memo_id") == memo_id:
+                return True
+    return False
+
+
+def pulisci_job_completati():
+    """Rimuove dalla barra notifiche tutti i job completati o in errore (mantiene quelli in corso)."""
+    with _JOBS_LOCK:
+        da_rimuovere = [jid for jid, j in _PODCAST_JOBS.items() if j.get("stato") != "in_corso"]
+        for jid in da_rimuovere:
+            _PODCAST_JOBS.pop(jid, None)
+
+
+def avvia_job_podcast_da_testo(
+    testo_manuale: str,
+    titolo_manuale: str,
+    fonte_manuale: str,
+    fix_pdf: bool,
+    clean_cit: bool,
+    voce_scelta: str,
+    speed_podcast: float
+) -> str:
+    """Avvia la creazione di un podcast da testo libero in un thread separato in background."""
+    import podcast_scraper
+    import podcast_tts
+
+    testo_effettivo = podcast_scraper.ricomponi_testo_pdf(testo_manuale) if fix_pdf else testo_manuale
+    if clean_cit:
+        testo_effettivo = podcast_scraper.rimuovi_citazioni_scientifiche(testo_effettivo)
+
+    tit_eff = titolo_manuale.strip()
+    if not tit_eff:
+        prime_righe = [r.strip() for r in testo_effettivo.split('\n') if r.strip()]
+        tit_eff = prime_righe[0][:60] if prime_righe else "Podcast da Appunti"
+
+    fonte_eff = fonte_manuale.strip() or "Appunti PC"
+
+    now = datetime.now()
+    job_id = f"txt_{now.strftime('%H%M%S_%f')}"
+    with _JOBS_LOCK:
+        _PODCAST_JOBS[job_id] = {
+            "id": job_id,
+            "ord": now.timestamp(),
+            "titolo": tit_eff,
+            "stato": "in_corso",
+            "messaggio": "Avvio analisi AI e salvataggio memo...",
+            "ts_avvio": now.strftime("%H:%M:%S"),
+            "ts_fine": None,
+            "memo_id": None
+        }
+
+    def _worker():
+        try:
+            # 1. Intro radiofonica snella
+            data_str = podcast_scraper.data_corrente_parlata()
+            intro_parlata = f"Oggi è {data_str}. Da {fonte_eff}: {tit_eff}. Buon ascolto, segue il testo completo."
+            intro_norm = podcast_scraper.pulisci_testo_per_voce(intro_parlata)
+            corpo_norm = podcast_scraper.pulisci_testo_per_voce(testo_effettivo)
+            narrazione_completa = f"{intro_norm}\n\n{corpo_norm}"
+
+            # 2. Analisi AI per riassunto e categorizzazione archivio
+            try:
+                import ai_processor
+                analisi_ai = ai_processor.analizza_testo(testo_effettivo, titolo_suggerito=tit_eff)
+                riassunto_memo = analisi_ai.get("riassunto") or f"Podcast da appunti: {tit_eff}"
+                categoria_memo = analisi_ai.get("categoria") or "Altro"
+                tags_memo = ", ".join(analisi_ai.get("tags", [])) or "appunti, podcast"
+                priorita_memo = int(analisi_ai.get("priorita", 3))
+            except Exception:
+                riassunto_memo = f"Podcast generato da appunti: {tit_eff}"
+                categoria_memo = "Altro"
+                tags_memo = "appunti, podcast"
+                priorita_memo = 3
+
+            # 3. Inserimento del nuovo memo nel database
+            new_memo_id = database.inserisci_memo(
+                tipo_contenuto="testo",
+                titolo=tit_eff,
+                riassunto=riassunto_memo,
+                testo_originale=testo_effettivo,
+                categoria=categoria_memo,
+                priorita=priorita_memo,
+                tags=tags_memo
+            )
+            _aggiorna_job(job_id, memo_id=new_memo_id, messaggio="In coda per sintesi vocale...")
+
+            # 4. Sintesi audio MP3 (serializzata con lock per sicurezza GPU/VRAM)
+            engine_podcast = "xtts" if voce_scelta.startswith("clone:") else ("edge" if "Neural" in voce_scelta else "kokoro")
+            with _TTS_EXECUTION_LOCK:
+                _aggiorna_job(job_id, messaggio=f"Sintesi vocale MP3 in corso ({engine_podcast.upper()})...")
+                res_audio = podcast_tts.genera_audio_podcast(
+                    testo_completo=narrazione_completa,
+                    titolo=tit_eff,
+                    fonte=fonte_eff,
+                    id_riferimento=new_memo_id,
+                    voce=voce_scelta,
+                    velocita=speed_podcast,
+                    engine=engine_podcast
+                )
+
+            if res_audio.get("successo") and os.path.exists(res_audio["percorso_assoluto"]):
+                _aggiorna_job(job_id, messaggio="Collegamento audio e aggiornamento feed RSS...")
+                database.imposta_podcast_memo(
+                    memo_id=new_memo_id,
+                    audio_path=res_audio["percorso_relativo"],
+                    durata=res_audio["durata_secondi"],
+                    intro=intro_norm,
+                    incluso=1
+                )
+                genera_feed_rss(FEED_PORT)
+                dur_s = int(res_audio["durata_secondi"] or 0)
+                dur_fmt = f"{dur_s // 60}:{dur_s % 60:02d}"
+                _aggiorna_job(
+                    job_id,
+                    stato="completato",
+                    messaggio=f"Memo #{new_memo_id} pronto ({dur_fmt}) e aggiunto al feed AntennaPod!",
+                    ts_fine=datetime.now().strftime("%H:%M:%S")
+                )
+            else:
+                _aggiorna_job(
+                    job_id,
+                    stato="errore",
+                    messaggio=f"Errore sintesi audio: {res_audio.get('errore') or 'sconosciuto'}",
+                    ts_fine=datetime.now().strftime("%H:%M:%S")
+                )
+        except Exception as e:
+            print(f"[PODCAST_BG] Errore job da testo '{tit_eff}': {e}")
+            _aggiorna_job(
+                job_id,
+                stato="errore",
+                messaggio=f"Errore imprevisto: {e}",
+                ts_fine=datetime.now().strftime("%H:%M:%S")
+            )
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return job_id
+
+
+def avvia_job_podcast_da_link(
+    memo_id: int,
+    link_originale: str,
+    titolo_corrente: str,
+    categoria_corrente: str,
+    voce_scelta: str,
+    speed_podcast: float
+) -> str:
+    """Avvia l'estrazione articolo e la sintesi podcast di un memo esistente in background."""
+    import podcast_scraper
+    import podcast_tts
+
+    now = datetime.now()
+    job_id = f"lnk_{memo_id}_{now.strftime('%H%M%S_%f')}"
+    tit_display = (titolo_corrente or f"Memo #{memo_id}").strip()
+
+    with _JOBS_LOCK:
+        _PODCAST_JOBS[job_id] = {
+            "id": job_id,
+            "ord": now.timestamp(),
+            "titolo": tit_display,
+            "stato": "in_corso",
+            "messaggio": "Estrazione testo pulito dall'articolo web...",
+            "ts_avvio": now.strftime("%H:%M:%S"),
+            "ts_fine": None,
+            "memo_id": int(memo_id)
+        }
+
+    def _worker():
+        try:
+            dati_art = podcast_scraper.estrai_articolo_pulito(link_originale)
+            if not (dati_art.get("testo_pulito") and len(dati_art.get("testo_pulito", "")) >= 100):
+                _aggiorna_job(
+                    job_id,
+                    stato="errore",
+                    messaggio="Impossibile estrarre testo leggibile da questo link.",
+                    ts_fine=datetime.now().strftime("%H:%M:%S")
+                )
+                return
+
+            intro, completo = podcast_scraper.genera_intro_podcast(dati_art)
+            fonte_art = dati_art.get("fonte") or categoria_corrente or "Web"
+            titolo_effettivo = dati_art.get("titolo") or titolo_corrente or "Articolo Web"
+
+            tit_c = str(titolo_corrente or "").strip()
+            if not tit_c or "articolo web" in tit_c.lower() or "senza titolo" in tit_c.lower():
+                if dati_art.get("titolo"):
+                    titolo_effettivo = dati_art["titolo"]
+                    riassunto_effettivo = dati_art.get("descrizione") or f"Fonte: {fonte_art} — Articolo estratto da link web."
+                    database.aggiorna_dettagli_articolo_memo(int(memo_id), titolo=titolo_effettivo, riassunto=riassunto_effettivo)
+
+            _aggiorna_job(job_id, titolo=titolo_effettivo, messaggio="In coda per sintesi vocale...")
+
+            engine_podcast = "xtts" if voce_scelta.startswith("clone:") else ("edge" if "Neural" in voce_scelta else "kokoro")
+            with _TTS_EXECUTION_LOCK:
+                _aggiorna_job(job_id, messaggio=f"Sintesi vocale MP3 in corso ({engine_podcast.upper()})...")
+                res_audio = podcast_tts.genera_audio_podcast(
+                    testo_completo=completo,
+                    titolo=titolo_effettivo,
+                    fonte=fonte_art,
+                    id_riferimento=int(memo_id),
+                    voce=voce_scelta,
+                    velocita=speed_podcast,
+                    engine=engine_podcast
+                )
+
+            if res_audio.get("successo") and os.path.exists(res_audio["percorso_assoluto"]):
+                _aggiorna_job(job_id, messaggio="Collegamento audio e aggiornamento feed RSS...")
+                database.imposta_podcast_memo(
+                    memo_id=int(memo_id),
+                    audio_path=res_audio["percorso_relativo"],
+                    durata=res_audio["durata_secondi"],
+                    intro=intro,
+                    incluso=1
+                )
+                genera_feed_rss(FEED_PORT)
+                dur_s = int(res_audio["durata_secondi"] or 0)
+                dur_fmt = f"{dur_s // 60}:{dur_s % 60:02d}"
+                _aggiorna_job(
+                    job_id,
+                    stato="completato",
+                    messaggio=f"Memo #{memo_id} pronto ({dur_fmt}) e aggiunto al feed AntennaPod!",
+                    ts_fine=datetime.now().strftime("%H:%M:%S")
+                )
+            else:
+                _aggiorna_job(
+                    job_id,
+                    stato="errore",
+                    messaggio=f"Errore sintesi audio: {res_audio.get('errore') or 'sconosciuto'}",
+                    ts_fine=datetime.now().strftime("%H:%M:%S")
+                )
+        except Exception as e:
+            print(f"[PODCAST_BG] Errore job da link #{memo_id}: {e}")
+            _aggiorna_job(
+                job_id,
+                stato="errore",
+                messaggio=f"Errore imprevisto: {e}",
+                ts_fine=datetime.now().strftime("%H:%M:%S")
+            )
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return job_id
+
+
+def render_banner_job_podcast():
+    """
+    Mostra un banner leggero in cima alla dashboard se ci sono generazioni podcast
+    attive in background o appena completate, consentendo la navigazione libera.
+    """
+    import streamlit as st
+
+    jobs = ottieni_stato_job_podcast()
+    if not jobs:
+        return
+
+    in_corso = [j for j in jobs if j["stato"] == "in_corso"]
+    finiti = [j for j in jobs if j["stato"] != "in_corso"][:4]
+
+    if in_corso:
+        with st.container(border=True):
+            c_txt, c_btn = st.columns([4.2, 1.1], vertical_alignment="center")
+            with c_txt:
+                righe = [
+                    f"⏳ **{j['titolo'][:55]}** — *{j['messaggio']}* *(avviato alle {j['ts_avvio']})*"
+                    for j in in_corso
+                ]
+                st.info(
+                    f"🎙️ **Generazione Podcast in background ({len(in_corso)}):** puoi navigare liberamente in MemoBot senza interrompere il lavoro.\n\n"
+                    + "\n\n".join(righe)
+                )
+            with c_btn:
+                if st.button("🔄 Aggiorna stato", key="btn_refresh_pod_jobs", use_container_width=True):
+                    st.rerun()
+
+    if finiti:
+        with st.container(border=True):
+            c_txt, c_btn = st.columns([4.2, 1.1], vertical_alignment="center")
+            with c_txt:
+                for j in finiti:
+                    if j["stato"] == "completato":
+                        st.success(f"🎉 **{j['titolo'][:55]}** — {j['messaggio']} *(ore {j['ts_fine']})*")
+                    else:
+                        st.error(f"❌ **{j['titolo'][:55]}** — {j['messaggio']} *(ore {j['ts_fine']})*")
+            with c_btn:
+                if st.button("✖️ Chiudi avvisi", key="btn_clear_pod_jobs", use_container_width=True):
+                    pulisci_job_completati()
+                    st.rerun()
+
+
 def render_scheda_podcast(df_memo=None):
     """Renderizza l'interfaccia interattiva della scheda Podcast in Streamlit."""
     import streamlit as st
@@ -772,78 +1085,17 @@ def render_scheda_podcast(df_memo=None):
                 if not testo_manuale.strip():
                     st.warning("Inserisci o incolla del testo prima di generare il podcast.")
                 else:
-                    with st.spinner("Creazione memo e sintesi vocale in corso..."):
-                        import podcast_scraper
-                        testo_effettivo = podcast_scraper.ricomponi_testo_pdf(testo_manuale) if fix_pdf else testo_manuale
-                        if clean_cit:
-                            testo_effettivo = podcast_scraper.rimuovi_citazioni_scientifiche(testo_effettivo)
-
-                        tit_eff = titolo_manuale.strip()
-                        if not tit_eff:
-                            prime_righe = [r.strip() for r in testo_effettivo.split('\n') if r.strip()]
-                            tit_eff = prime_righe[0][:60] if prime_righe else "Podcast da Appunti"
-
-                        fonte_eff = fonte_manuale.strip() or "Appunti PC"
-
-                        # 1. Intro radiofonica snella (Opzione A)
-                        data_str = podcast_scraper.data_corrente_parlata()
-                        intro_parlata = f"Oggi è {data_str}. Da {fonte_eff}: {tit_eff}. Buon ascolto, segue il testo completo."
-                        intro_norm = podcast_scraper.pulisci_testo_per_voce(intro_parlata)
-                        corpo_norm = podcast_scraper.pulisci_testo_per_voce(testo_effettivo)
-                        narrazione_completa = f"{intro_norm}\n\n{corpo_norm}"
-
-                        # 2. Analisi AI per riassunto e categorizzazione archivio
-                        try:
-                            import ai_processor
-                            analisi_ai = ai_processor.analizza_testo(testo_effettivo, titolo_suggerito=tit_eff)
-                            riassunto_memo = analisi_ai.get("riassunto") or f"Podcast da appunti: {tit_eff}"
-                            categoria_memo = analisi_ai.get("categoria") or "Altro"
-                            tags_memo = ", ".join(analisi_ai.get("tags", [])) or "appunti, podcast"
-                            priorita_memo = int(analisi_ai.get("priorita", 3))
-                        except Exception:
-                            riassunto_memo = f"Podcast generato da appunti: {tit_eff}"
-                            categoria_memo = "Altro"
-                            tags_memo = "appunti, podcast"
-                            priorita_memo = 3
-
-                        # 3. Inserimento del nuovo memo nel database
-                        new_memo_id = database.inserisci_memo(
-                            tipo_contenuto="testo",
-                            titolo=tit_eff,
-                            riassunto=riassunto_memo,
-                            testo_originale=testo_effettivo,
-                            categoria=categoria_memo,
-                            priorita=priorita_memo,
-                            tags=tags_memo
-                        )
-
-                        # 4. Sintesi audio MP3
-                        engine_podcast = "xtts" if voce_scelta.startswith("clone:") else ("edge" if "Neural" in voce_scelta else "kokoro")
-                        speed_podcast = float(st.session_state.get("cfg_podcast_speed") or settings.get("podcast_speed", 1.0))
-
-                        res_audio = podcast_tts.genera_audio_podcast(
-                            testo_completo=narrazione_completa,
-                            titolo=tit_eff,
-                            fonte=fonte_eff,
-                            id_riferimento=new_memo_id,
-                            voce=voce_scelta,
-                            velocita=speed_podcast,
-                            engine=engine_podcast
-                        )
-
-                        if res_audio.get("successo") and os.path.exists(res_audio["percorso_assoluto"]):
-                            database.imposta_podcast_memo(
-                                memo_id=new_memo_id,
-                                audio_path=res_audio["percorso_relativo"],
-                                durata=res_audio["durata_secondi"],
-                                intro=intro_norm,
-                                incluso=1
-                            )
-                            genera_feed_rss(FEED_PORT)
-                            st.success(f"🎉 Podcast '{tit_eff}' generato con successo e aggiunto al feed AntennaPod!")
-                            st.rerun()
-                        else:
-                            st.error(f"Errore generazione audio: {res_audio.get('errore')}")
+                    speed_podcast = float(st.session_state.get("cfg_podcast_speed") or settings.get("podcast_speed", 1.0))
+                    avvia_job_podcast_da_testo(
+                        testo_manuale=testo_manuale,
+                        titolo_manuale=titolo_manuale,
+                        fonte_manuale=fonte_manuale,
+                        fix_pdf=fix_pdf,
+                        clean_cit=clean_cit,
+                        voce_scelta=voce_scelta,
+                        speed_podcast=speed_podcast
+                    )
+                    st.rerun()
 
     # --------------------------------------------------------------------------
     # CONVERSIONE ARTICOLI ESISTENTI NEL DATABASE
@@ -876,32 +1128,17 @@ def render_scheda_podcast(df_memo=None):
                     st.write(f"📌 **#{m['id']}** — {m['titolo']} *({m['categoria']})*")
                     st.caption(f"🔗 {m['link_originale'][:80]}...")
                 with col_m2:
-                    if st.button("🎙️ Genera Podcast", key=f"btn_convert_pod_{m['id']}", use_container_width=True, type="primary"):
-                        with st.spinner("Estrazione testo e sintesi vocale in corso..."):
-                            art = podcast_scraper.estrai_articolo_pulito(m['link_originale'])
-                            if art.get("successo") and len(art.get("testo_pulito", "")) >= 100:
-                                intro, completo = podcast_scraper.genera_intro_podcast(art)
-                                res_audio = podcast_tts.genera_audio_podcast(
-                                    testo_completo=completo,
-                                    titolo=m['titolo'],
-                                    fonte=art.get("fonte") or m['categoria'],
-                                    id_riferimento=m['id'],
-                                    voce=settings.get("podcast_voice", "im_nicola"),
-                                    velocita=float(settings.get("podcast_speed", 1.0)),
-                                    engine=settings.get("podcast_engine", "kokoro")
-                                )
-                                if res_audio.get("successo"):
-                                    database.imposta_podcast_memo(
-                                        memo_id=m['id'],
-                                        audio_path=res_audio["percorso_relativo"],
-                                        durata=res_audio["durata_secondi"],
-                                        intro=intro,
-                                        incluso=1
-                                    )
-                                    genera_feed_rss(FEED_PORT)
-                                    st.success(f"Episodio per '{m['titolo']}' generato con successo!")
-                                    st.rerun()
-                                else:
-                                    st.error("Errore durante la sintesi vocale.")
-                            else:
-                                st.error("Impossibile estrarre il testo pulito dal link indicato.")
+                    if is_memo_in_generazione(int(m['id'])):
+                        st.button("⏳ In corso...", key=f"btn_convert_pod_{m['id']}", use_container_width=True, disabled=True)
+                    elif st.button("🎙️ Genera Podcast", key=f"btn_convert_pod_{m['id']}", use_container_width=True, type="primary"):
+                        voce_p = st.session_state.get("cfg_podcast_voice") or settings.get("podcast_voice", "im_nicola")
+                        speed_p = float(st.session_state.get("cfg_podcast_speed") or settings.get("podcast_speed", 1.0))
+                        avvia_job_podcast_da_link(
+                            memo_id=int(m['id']),
+                            link_originale=m['link_originale'],
+                            titolo_corrente=m['titolo'],
+                            categoria_corrente=m['categoria'],
+                            voce_scelta=voce_p,
+                            speed_podcast=speed_p
+                        )
+                        st.rerun()

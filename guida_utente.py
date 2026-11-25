@@ -211,12 +211,12 @@ def render_scheda_guida():
         
         #### Come Funziona il Flusso Quotidiano
         1. **Condividi l'Articolo da Telegram:**
-           * Quando trovi un articolo interessante su internet (es. Dagospia, blog, notizie, approfondimenti), condividi il link nella chat privata con il tuo bot su Telegram.
+           * Quando trovi un articolo interessante su internet (es. quotidiani online, blog, portali di notizie, approfondimenti), condividi il link nella chat privata con il tuo bot su Telegram.
         2. **Sincronizzazione ed Estrazione Intelligente:**
-           * Clicca su **`🔄 Sincronizza ora con Telegram`** (o lascia sincronizzare MemoBot): il sistema visita il link, rimuove banner pubblicitari, pop-up dei cookie e testo irrilevante con *Trafilatura*. Include un motore anti-WAF trasparente con browser Chromium nativo per superare i blocchi 403 (Akamai, Cloudflare) tipici di quotidiani e testate aperte (es. Fanpage, Dagospia, ecc.).
+           * Clicca su **`🔄 Sincronizza ora con Telegram`** (o lascia sincronizzare MemoBot): il sistema visita il link, rimuove banner pubblicitari, pop-up dei cookie e testo irrilevante con *Trafilatura*. Include un motore anti-WAF trasparente con browser Chromium nativo per superare i blocchi 403 (Akamai, Cloudflare) tipici di quotidiani e portali di informazione aperti.
         3. **Introduzione Radiofonica Fluida & Narrazione Naturale (Zero Ripetizioni):**
            * Per garantire un ascolto dinamico e piacevole in auto senza l'effetto 'disco rotto', l'introduzione adotta lo stile rassegna stampa radiofonica diretta: recita la *data odierna in italiano*, la *fonte* e il *titolo dell'articolo*, passando subito all'ascolto del testo integrale.
-           * Il sistema applica la **deduplicazione intelligente dell'incipit**: rimuove automaticamente dall'inizio del testo estratto il titolo o sottotitolo ripetuto (frequente sui siti di news come Dagospia o Fanpage), facendo iniziare la narrazione vocale direttamente dalla prima frase della storia.
+           * Il sistema applica la **deduplicazione intelligente dell'incipit**: rimuove automaticamente dall'inizio del testo estratto il titolo o sottotitolo ripetuto (frequente su molti portali di news e quotidiani online), facendo iniziare la narrazione vocale direttamente dalla prima frase della storia.
            * Il motore vocale ultra-realistico (voci clonate GPU Coqui XTTS-v2 o Kokoro-82M ONNX su CPU) legge l'articolo con intonazione naturale e priva di qualunque ridondanza.
         4. **Ascolto su Android Auto con AntennaPod:**
            * Apri la scheda **`🎙️ Podcast & Audio`** su MemoBot sul tuo PC.
@@ -239,17 +239,14 @@ def render_scheda_guida():
             * 👩 **Elsa IT (Edge Cloud)**: Voce broadcast Microsoft Azure, massima naturalezza e prosodia italiana perfetta per rassegna stampa e saggi.
             * 👨 **Diego IT (Edge Cloud)**: Voce maschile fluida e giornalistica.
             * 👨 **Nicola** / 👩 **Sara**: Voci sintetiche neurali veloci su CPU (Kokoro-82M).
-            * ✨ **Alberto Angela (Clonata GPU)**: Timbro divulgativo, appassionante e rassicurante.
-            * ✨ **Gianni Musy (Clonata GPU)**: Timbro profondo, maestoso e teatrale (storica voce di Gandalf e Silente).
-            * ✨ **Giuseppe Battiston (Clonata GPU)**: Timbro caldo, avvolgente e colloquiale.
-            * ✨ **Voce Femminile 1 (Clonata GPU)**: Timbro radiofonico limpido ed autorevole da rassegna stampa.
+            * ✨ **Voci Personalizzate (Clonate GPU)**: qualsiasi voce campione aggiunta nella cartella `voci/` (narratori, audiolibri o la tua stessa voce).
 
         ---
 
         #### 📁 Gestione File Audio, Peso su Disco e Azioni Massive
-        * **Dove risiedono i file:** Tutti i podcast MP3 generati vengono salvati localmente sul tuo PC nella cartella:  
-          `D:\MemoBot\podcasts\` (nessun file audio viene inviato a server esterni o cloud).
+        * **Dove risiedono i file:** Tutti i podcast MP3 generati vengono salvati localmente sul tuo PC nella cartella `podcasts/` del progetto (nessun file audio viene inviato a server esterni o cloud).
         * **Download Diretto del File MP3:** Ciascun episodio podcast (sia all'interno della scheda del memo che nella sezione dedicata ai Podcast) dispone del pulsante **`💾 Scarica MP3`**: con un solo clic puoi salvare il file sul computer già con l'estensione corretta `.mp3` e con il titolo reale del memo/podcast, evitando i menu del browser.
+        * **Generazione Asincrona in Background (Navigazione Libera):** Quando avvii la creazione di un podcast (da testo, PDF o link), l'elaborazione viene eseguita in background su un thread dedicato. Puoi cambiare scheda, leggere o modificare altri memo liberamente nella stessa finestra senza interrompere la sintesi; un banner in alto ti mostra lo stato in tempo reale e ti avvisa non appena l'episodio è pronto nel feed.
         * **Peso e Spazio:** I file sono codificati a **128 kbps a 44.1 kHz**, con un peso costante e ridotto di circa **0.95 MB per minuto di parlato** (~3–4 MB per articoli standard, ~17 MB per lunghi approfondimenti da 18 minuti). L'intero feed di 30-40 episodi occupa complessivamente poco più di 100 MB.
         * **Cancellazione Audio & Integrità del Memo:** Quando un episodio audio viene eliminato, il file `.mp3` viene rimosso fisicamente dal disco liberando spazio, ma **il memo testuale originale (link, riassunto AI, data e note) rimane intatto nel database**.
         * **Azioni Massive nella Scheda Podcast (1 Clic):**
@@ -260,7 +257,7 @@ def render_scheda_guida():
         ---
 
         #### 🎙️ Guida Operativa: Creare e Aggiungere Nuove Voci Personalizzate (Voice Cloning)
-        MemoBot ti permette di clonare **qualsiasi voce reale** (un doppiatore celebre, un narratore di audiolibri, un familiare o la tua stessa voce) grazie al motore neurale **Coqui XTTS-v2** accelerato dalla GPU NVIDIA RTX 5070 Ti, con clonazione immediata *Zero-Shot* (senza attese di addestramento).
+        MemoBot ti permette di clonare **qualsiasi voce reale** (un narratore di audiolibri, un familiare o la tua stessa voce) grazie al motore neurale **Coqui XTTS-v2** accelerato da GPU NVIDIA (CUDA), con clonazione immediata *Zero-Shot* (senza attese di addestramento).
 
         ##### 1. Regole d'Oro per il Campione Audio Perfetto
         * **Durata ideale:** tra **15 e 30 secondi** di parlato continuo. Sotto i 10 secondi il modello fatica a cogliere le inflessioni; oltre i 45 secondi non migliora la qualità e rallenta solo il condizionamento acustico.
@@ -273,12 +270,12 @@ def render_scheda_guida():
           1. Apri la barra laterale sinistra (sezione **🎙️ Podcast & Audio**) oppure la scheda principale **🎙️ Podcast**.
           2. Clicca sul riquadro espandibile **`➕ Carica Nuova Voce Campione`**.
           3. Trascina o seleziona il file audio dal tuo PC tramite il pulsante di caricamento.
-          4. Assegna il nome desiderato per il narratore (es. *Roberto Pedicini*, *Luca Ward*, *Mia Voce*).
+          4. Assegna il nome desiderato per il narratore (es. *Narratore 1*, *Mia Voce*, *Voce Audiolibro*).
           5. Premi **Salva Campione Voce**: MemoBot normalizzerà il file e lo salverà nella cartella dedicata. La nuova voce comparirà all'istante nel menu a tendina con il prefisso ✨!
         * **Metodo B (Copia Diretta nella Cartella di Sistema):**
-          1. Prendi il file audio pronto e copialo direttamente nella cartella `D:\MemoBot\voci\`.
-          2. Rinominalo in modo descrittivo usando lettere minuscole e trattini bassi (es. `roberto_pedicini.wav` oppure `voce_amica_elena.mp3`).
-          3. Ricarica la dashboard (tasto **F5**): MemoBot effettuerà la scansione automatica e mostrerà la voce tra i narratori disponibili (es. `✨ Roberto Pedicini (Voce Clonata - XTTS GPU)`).
+          1. Prendi il file audio pronto e copialo direttamente nella cartella `voci/` del progetto.
+          2. Rinominalo in modo descrittivo usando lettere minuscole e trattini bassi (es. `narratore_1.wav` oppure `voce_femminile_elena.mp3`).
+          3. Ricarica la dashboard (tasto **F5**): MemoBot effettuerà la scansione automatica e mostrerà la voce tra i narratori disponibili (es. `✨ Narratore 1 (Voce Clonata - XTTS GPU)`).
 
         ##### 3. Suggerimento per le Voci Femminili & Fallback di Genere
         * Se aggiungi una voce femminile, è consigliabile includere parole come *"femminile"*, *"donna"* o un nome proprio femminile nel nome del file (es. `voce_femminile_2.wav` o `elena.wav`).

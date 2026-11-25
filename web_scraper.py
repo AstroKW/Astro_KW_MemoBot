@@ -285,10 +285,9 @@ def prepara_prompt_per_ai(url: str, testo_utente: str = "") -> tuple[str, str]:
 
 if __name__ == "__main__":
     print("Test modulo web_scraper...")
-    # Test su Tomshw
-    test_url = "https://www.tomshw.it/hardware/200eur-in-meno-sul-dell-tower-plus-rtx-5070-per-chi-crea-sul-serio"
+    test_url = "https://example.com"
     risultato = analizza_link_completo(test_url)
-    print("\n--- RISULTATO TEST TOMSHW ---")
+    print("\n--- RISULTATO TEST ---")
     print("Titolo:", risultato["titolo"])
     print("Fonte :", risultato["fonte"])
     print("Snippet testo:\n", risultato["testo_articolo"][:250])

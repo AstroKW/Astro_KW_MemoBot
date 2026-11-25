@@ -717,6 +717,9 @@ else:
     cat_id = active_cat
     cat_label = mappa_nomi.get(cat_id, cat_id)
 
+    # Banner globale non bloccante per sintesi podcast in corso / completate in background
+    podcast_feed.render_banner_job_podcast()
+
     st.markdown("")
 
     if cat_id == "Guida":
@@ -1093,52 +1096,21 @@ else:
                                         podcast_feed.genera_feed_rss()
                                         st.rerun()
                         elif row.get('link_originale') and str(row.get('link_originale')).strip().startswith(('http://', 'https://')):
-                            if st.button("🎙️ Genera Podcast Audio da Link", key=f"btn_gen_podcast_{row['id']}_{cat_id}"):
-                                with st.spinner("Estrazione testo articolo e sintesi vocale in corso..."):
-                                    import podcast_scraper
-                                    import podcast_tts
-                                    dati_art = podcast_scraper.estrai_articolo_pulito(row['link_originale'])
-                                    if dati_art.get('testo_pulito'):
-                                        intro, completo = podcast_scraper.genera_intro_podcast(dati_art)
-                                        fonte_art = dati_art.get('fonte') or 'Web'
-                                        sett = settings_manager.carica_impostazioni()
-                                        # Priorità alla voce correntemente attiva nella UI se impostata, altrimenti impostazioni su disco
-                                        voce_podcast = st.session_state.get("cfg_podcast_voice") or sett.get("podcast_voice", "im_nicola")
-                                        engine_podcast = "xtts" if voce_podcast.startswith("clone:") else ("edge" if "Neural" in voce_podcast else "kokoro")
-                                        speed_podcast = float(st.session_state.get("cfg_podcast_speed") or sett.get("podcast_speed", 1.0))
-                                        
-                                        titolo_effettivo = dati_art.get('titolo') or row.get('titolo') or 'Articolo Web'
-                                        titolo_corrente = str(row.get('titolo') or '').strip()
-                                        if not titolo_corrente or 'articolo web' in titolo_corrente.lower() or 'senza titolo' in titolo_corrente.lower():
-                                            if dati_art.get('titolo'):
-                                                titolo_effettivo = dati_art['titolo']
-                                                riassunto_effettivo = dati_art.get('descrizione') or f"Fonte: {fonte_art} — Articolo estratto da link web."
-                                                database.aggiorna_dettagli_articolo_memo(int(row['id']), titolo=titolo_effettivo, riassunto=riassunto_effettivo)
-
-                                        res_audio = podcast_tts.genera_audio_podcast(
-                                            completo,
-                                            titolo=titolo_effettivo,
-                                            fonte=fonte_art,
-                                            id_riferimento=int(row['id']),
-                                            voce=voce_podcast,
-                                            velocita=speed_podcast,
-                                            engine=engine_podcast
-                                        )
-                                        if res_audio.get("successo") and os.path.exists(res_audio["percorso_assoluto"]):
-                                            database.imposta_podcast_memo(
-                                                memo_id=int(row['id']),
-                                                audio_path=res_audio["percorso_relativo"],
-                                                durata=res_audio["durata_secondi"],
-                                                intro=intro,
-                                                incluso=1
-                                            )
-                                            podcast_feed.genera_feed_rss()
-                                            st.success("Podcast generato con successo!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Errore durante la sintesi audio del podcast.")
-                                    else:
-                                        st.warning("Impossibile estrarre il testo leggibile da questo link.")
+                            if podcast_feed.is_memo_in_generazione(int(row['id'])):
+                                st.info("⏳ Sintesi podcast in corso in background... Puoi continuare a navigare liberamente.")
+                            elif st.button("🎙️ Genera Podcast Audio da Link", key=f"btn_gen_podcast_{row['id']}_{cat_id}"):
+                                sett = settings_manager.carica_impostazioni()
+                                voce_podcast = st.session_state.get("cfg_podcast_voice") or sett.get("podcast_voice", "im_nicola")
+                                speed_podcast = float(st.session_state.get("cfg_podcast_speed") or sett.get("podcast_speed", 1.0))
+                                podcast_feed.avvia_job_podcast_da_link(
+                                    memo_id=int(row['id']),
+                                    link_originale=str(row['link_originale']).strip(),
+                                    titolo_corrente=str(row.get('titolo') or ''),
+                                    categoria_corrente=str(row.get('categoria') or 'Web'),
+                                    voce_scelta=voce_podcast,
+                                    speed_podcast=speed_podcast
+                                )
+                                st.rerun()
                         
                         if row['tags']:
                             tags_list = [f"`{t.strip()}`" for t in str(row['tags']).split(',') if t.strip()]
